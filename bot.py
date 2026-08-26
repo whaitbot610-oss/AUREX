@@ -795,7 +795,8 @@ def main():
         app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 
         print("🚀 جاري تشغيل البوت وخادم الويب بنجاح...")
-        app.run_polling(drop_pending_updates=True, stop_signals=None)
+        # تم تصحيح هذا السطر بحذف stop_signals=None لتفادي عطل Updater
+        app.run_polling(drop_pending_updates=True)
     except Exception as e:
         print(f"❌ خطأ أثناء تشغيل البوت: {e}")
 
