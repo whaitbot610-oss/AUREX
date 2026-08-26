@@ -1,14 +1,31 @@
 import os
 import sqlite3
 import logging
+import threading
 from datetime import datetime, timedelta
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
     filters, ContextTypes
 )
 
+# ---------------------------------------------------------
+# إعداد خادم الويب الوهمي لإرضاء خوادم Render
+# ---------------------------------------------------------
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot Server is Online & Running Successfully!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    web_app.run(host="0.0.0.0", port=port)
+
+# ---------------------------------------------------------
 # إعدادات البيئة والتوقيع
+# ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI").strip()
 SERVER_URL = os.environ.get("SERVER_URL", "https://aurex-my-bot.onrender.com")
 ADMIN_ID = 7255100997
@@ -753,7 +770,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تم إرسال الصورة للدعم بنجاح!")
 
 # ---------------------------------------------------------
-# نقطة التشغيل الرئيسية مع حماية الاتصال
+# نقطة التشغيل الرئيسية مع حماية الاتصال وخادم الويب
 # ---------------------------------------------------------
 def main():
     init_db()
@@ -761,6 +778,9 @@ def main():
     if not BOT_TOKEN or len(BOT_TOKEN) < 20:
         print("❌ خطأ: لم يتم التعرف على توكن البوت!")
         return
+
+    # تشغيل خادم Flask في الخلفية لإبقاء الخدمة متاحة في Render
+    threading.Thread(target=run_flask, daemon=True).start()
 
     try:
         app = Application.builder().token(BOT_TOKEN).build()
@@ -774,8 +794,8 @@ def main():
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
         app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 
-        print("🚀 جاري تشغيل البوت بنجاح...")
-        app.run_polling(drop_pending_updates=True)
+        print("🚀 جاري تشغيل البوت وخادم الويب بنجاح...")
+        app.run_polling(drop_pending_updates=True, stop_signals=None)
     except Exception as e:
         print(f"❌ خطأ أثناء تشغيل البوت: {e}")
 
