@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casino Platform Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: #0f172a; color: #fff; text-align: center; padding: 20px; }
+        .card { background: #1e293b; border-radius: 16px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 400px; margin: 0 auto; border: 1px solid #334155; }
+        .balance-box { background: #0f172a; border: 2px solid #3b82f6; padding: 15px; border-radius: 12px; font-size: 1.3rem; margin-bottom: 20px; }
+        .slot-machine { display: flex; justify-content: center; gap: 10px; background: #020617; padding: 20px; border-radius: 12px; font-size: 3rem; margin-bottom: 20px; border: 1px solid #1e293b; }
+        .reel { background: #1e293b; width: 70px; height: 80px; line-height: 80px; border-radius: 8px; border: 1px solid #475569; }
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        input[type="number"] { padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 1rem; text-align: center; }
+        button { padding: 14px; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status { margin-top: 15px; font-size: 1.1rem; min-height: 24px; font-weight: bold; }
+        .win { color: #10b981; }
+        .lose { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2 style="margin-bottom: 15px;">منصة الألعاب</h2>
+    
+    <div class="balance-box">
+        الرصيد: <span id="balance">0.00</span> $
+    </div>
+
+    <div class="slot-machine">
+        <div class="reel" id="r1">🎰</div>
+        <div class="reel" id="r2">🎰</div>
+        <div class="reel" id="r3">🎰</div>
+    </div>
+
+    <div class="controls">
+        <input type="number" id="betAmount" value="10" min="1" placeholder="مبلغ الرهان">
+        <button id="spinBtn" onclick="playGame()">بدء الضربة 🎰</button>
+    </div>
+
+    <div class="status" id="statusMessage"></div>
+</div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    
+    // جلب معرف المستعمل من تلجرام أو افتراضي للتجربة
+    const user = tg.initDataUnsafe.user || { id: 123456789, first_name: "Guest" };
+    const symbols = ['🍎', '🍋', '🍒', '🍉', '🔔', '💎', '7️⃣'];
+
+    async function loadUser() {
+        try {
+            const res = await fetch(`/api/user/${user.id}`);
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('balance').innerText = data.balance.toFixed(2);
+            } else {
+                await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ telegram_id: user.id, username: user.first_name })
+                });
+                loadUser();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function playGame() {
+        const bet = parseFloat(document.getElementById('betAmount').value);
+        const btn = document.getElementById('spinBtn');
+        const status = document.getElementById('statusMessage');
+
+        if (!bet || bet <= 0) return alert('يرجى ادخال مبلغ رهان صحيح');
+
+        btn.disabled = true;
+        status.className = 'status';
+        status.innerText = 'جاري التدوير...';
+
+        try {
+            const res = await fetch('/api/play', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ telegram_id: user.id, bet_amount: bet })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                status.className = 'status lose';
+                status.innerText = data.error || 'حدث خطأ';
+                btn.disabled = false;
+                return;
+            }
+
+            // الخصم الفوري للرصيد شاشياً أثناء التدوير
+            let currentBal = parseFloat(document.getElementById('balance').innerText);
+            document.getElementById('balance').innerText = (currentBal - bet).toFixed(2);
+
+            // أنيميشن تدوير الرمز
+            let spins = 0;
+            const interval = setInterval(() => {
+                document.getElementById('r1').innerText = symbols[Math.floor(Math.random() * symbols.length)];
+                document.getElementById('r2').innerText = symbols[Math.floor(Math.random() * symbols.length)];
+                document.getElementById('r3').innerText = symbols[Math.floor(Math.random() * symbols.length)];
+                spins++;
+
+                if (spins > 10) {
+                    clearInterval(interval);
+                    
+                    // تحديث النتيجة بعد انتهاء الضربة
+                    if (data.win) {
+                        document.getElementById('r1').innerText = '💎';
+                        document.getElementById('r2').innerText = '💎';
+                        document.getElementById('r3').innerText = '💎';
+                        status.className = 'status win';
+                        status.innerText = `مبروك! فزت بـ ${data.payout.toFixed(2)} $`;
+                    } else {
+                        status.className = 'status lose';
+                        status.innerText = 'حاول مرة أخرى!';
+                    }
+
+                    // تحديث الرصيد الحقيقي النهائي من السيرفر
+                    document.getElementById('balance').innerText = data.new_balance.toFixed(2);
+                    btn.disabled = false;
+                }
+            }, 100);
+
+        } catch (e) {
+            status.innerText = 'خطأ في الاتصال بالسيرفر';
+            btn.disabled = false;
+        }
+    }
+
+    loadUser();
+</script>
+</body>
+</html>
