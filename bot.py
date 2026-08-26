@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 # إعدادات البيئة والتوقيع
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8439192012:AAESCRJOdvE9VcECILq8Y_ZocIVwev6bnXk").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI").strip()
 SERVER_URL = os.environ.get("SERVER_URL", "https://aurex-my-bot.onrender.com")
 ADMIN_ID = 7255100997
 
