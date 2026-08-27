@@ -2,9 +2,11 @@ import os
 import sqlite3
 import random
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
+app.secret_key = "aurex_casino_secret_key_2026_secure" # مفتاح حماية الجلسات
+
 DB_NAME = "database.db"
 
 def get_db_connection():
@@ -16,7 +18,7 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # جدول المستخدمين الموحد (يدعم الربط مع عدة بوتات والموقع)
+    # 1. جدول المستخدمين الموحد
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
@@ -37,7 +39,7 @@ def init_db():
         )
     ''')
     
-    # جدول المعاملات (إيداع وسحب)
+    # 2. جدول المعاملات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,12 +48,12 @@ def init_db():
             method TEXT, -- Syriatel / Sham
             amount REAL,
             tx_number TEXT,
-            status TEXT DEFAULT 'pending', -- pending / approved / rejected
+            status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # جدول أكواد الهدايا
+    # 3. جدول أكواد الهدايا
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gift_codes (
             code TEXT PRIMARY KEY,
@@ -61,7 +63,7 @@ def init_db():
         )
     ''')
     
-    # سجل الأكواد المستعملة
+    # 4. سجل الأكواد المستعملة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS used_codes (
             telegram_id INTEGER,
@@ -70,7 +72,7 @@ def init_db():
         )
     ''')
 
-    # جدول حسابات الدفع
+    # 5. جدول حسابات الدفع
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payment_methods (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +82,7 @@ def init_db():
         )
     ''')
 
-    # جدول الإعدادات العامة والخزينة
+    # 6. جدول الإعدادات العامة والخزينة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -99,6 +101,14 @@ def init_db():
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
         
+    # --- إنشاء حساب الأدمن الافتراضي إذا لم يكن موجوداً ---
+    cursor.execute("SELECT * FROM users WHERE site_username = 'Admin'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            INSERT INTO users (telegram_id, username, site_username, site_password, balance, is_admin)
+            VALUES (?, ?, ?, ?, ?, 1)
+        ''', (999999, 'Admin', 'Admin', 'Admin096', 0.0))
+
     conn.commit()
     conn.close()
 
@@ -122,7 +132,7 @@ def get_setting_val(cursor, key_name, default_val="0"):
 # Middleware لفحص وضع الصيانة
 @app.before_request
 def check_maintenance():
-    if request.path.startswith('/api/') and not request.path.startswith('/api/admin'):
+    if request.path.startswith('/api/') and not request.path.startswith('/api/admin') and not request.path.startswith('/api/auth'):
         conn = get_db_connection()
         cursor = conn.cursor()
         m = get_setting_val(cursor, 'maintenance', 'off')
@@ -135,7 +145,44 @@ def check_maintenance():
 def home():
     return render_template('index.html')
 
-# --- APIs التوثيق والمستخدمين الموحدة ---
+# --- APIs التوثيق وتسجيل الدخول اليدوي ---
+@app.route('/api/auth/login', methods=['POST'])
+def login_site():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+
+    if not username or not password:
+        return jsonify({'error': 'يرجى إدخال اسم المستخدم وكلمة المرور'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE (site_username = ? OR username = ?) AND site_password = ?", 
+                   (username, username, password))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
+
+    # حفظ المستخدم في الجلسة
+    session['user_id'] = user['telegram_id']
+    session['is_admin'] = bool(user['is_admin'])
+
+    return jsonify({
+        'status': 'success',
+        'telegram_id': user['telegram_id'],
+        'username': user['site_username'] or user['username'],
+        'balance': user['balance'],
+        'got_welcome_bonus': user['got_welcome_bonus'],
+        'is_admin': bool(user['is_admin'])
+    })
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout_site():
+    session.clear()
+    return jsonify({'status': 'success', 'message': 'تم تسجيل الخروج'})
+
 @app.route('/api/auth/telegram', methods=['POST'])
 def telegram_auth():
     data = request.json or {}
@@ -161,37 +208,17 @@ def telegram_auth():
         cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
         user = cursor.fetchone()
 
-    balance = user['balance']
-    is_admin = bool(user['is_admin'])
+    session['user_id'] = user['telegram_id']
+    session['is_admin'] = bool(user['is_admin'])
+
     conn.close()
-
-    return jsonify({
-        'status': 'success',
-        'telegram_id': telegram_id,
-        'balance': balance,
-        'is_admin': is_admin
-    })
-
-@app.route('/api/auth/login', methods=['POST'])
-def login_site():
-    data = request.json or {}
-    username = data.get('username', '')
-    password = data.get('password', '')
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE (site_username = ? OR username = ?) AND site_password = ?", 
-                   (username, username, str(password)))
-    user = cursor.fetchone()
-    conn.close()
-
-    if not user:
-        return jsonify({'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
 
     return jsonify({
         'status': 'success',
         'telegram_id': user['telegram_id'],
+        'username': user['site_username'] or user['username'],
         'balance': user['balance'],
+        'got_welcome_bonus': user['got_welcome_bonus'],
         'is_admin': bool(user['is_admin'])
     })
 
@@ -208,10 +235,10 @@ def get_user(telegram_id):
 def register_site():
     data = request.json or {}
     telegram_id = data.get('telegram_id')
-    site_user = data.get('site_user', '')
-    site_pass = data.get('site_pass', '')
+    site_user = data.get('site_user', '').strip()
+    site_pass = data.get('site_pass', '').strip()
     
-    if len(site_user) < 4 or not str(site_pass).isdigit() or len(str(site_pass)) < 4:
+    if len(site_user) < 4 or not site_pass.isdigit() or len(site_pass) < 4:
         return jsonify({'error': 'اسم المستخدم يجب أن يكون 4 أحرف على الأقل، وكلمة المرور 4 أرقام'}), 400
         
     conn = get_db_connection()
@@ -226,11 +253,14 @@ def register_site():
         conn.close()
         return jsonify({'error': 'اسم المستخدم هذا مأخوذ بالفعل'}), 400
 
-# --- API مطالبة بالبونص الترحيبي ---
+# --- API مطالبة بالبونص الترحيبي (يخصم من الكاشيرة) ---
 @app.route('/api/claim_welcome_bonus', methods=['POST'])
 def claim_welcome_bonus():
     data = request.json or {}
-    telegram_id = data.get('telegram_id')
+    telegram_id = data.get('telegram_id') or session.get('user_id')
+
+    if not telegram_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول أولاً'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -244,13 +274,14 @@ def claim_welcome_bonus():
         conn.close()
         return jsonify({'error': 'لقد حصلت على البونص الترحيبي سابقاً'}), 400
 
-    bonus_amount = float(get_setting_val(cursor, 'welcome_bonus', '0'))
+    bonus_amount = float(get_setting_val(cursor, 'welcome_bonus', '500'))
     cashier = float(get_setting_val(cursor, 'cashier_balance', '0'))
 
     if cashier < bonus_amount:
         conn.close()
         return jsonify({'error': 'عذراً، رصيد الكاشيرة لا يكفي لإرسال البونص حالياً'}), 400
 
+    # الخصم من الكاشيرة وإضافتها للمستخدم
     update_cashier_balance(cursor, -bonus_amount)
     new_user_balance = user['balance'] + bonus_amount
 
@@ -260,6 +291,7 @@ def claim_welcome_bonus():
     conn.close()
 
     return jsonify({
+        'status': 'success',
         'message': f'تمت إضافة البونص الترحيبي ({bonus_amount}) بنجاح وخصمه من الكاشيرة',
         'new_balance': new_user_balance
     })
@@ -268,9 +300,12 @@ def claim_welcome_bonus():
 @app.route('/api/play', methods=['POST'])
 def play():
     data = request.json or {}
-    telegram_id = data.get('telegram_id')
+    telegram_id = data.get('telegram_id') or session.get('user_id')
     bet_amount = float(data.get('bet_amount', 0))
     game_id = data.get('game_id', 'slot_default')
+
+    if not telegram_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول للعب'}), 401
 
     if bet_amount <= 0:
         return jsonify({'error': 'قيمة الرهان غير صالحة'}), 400
@@ -323,14 +358,23 @@ def play():
 # --- APIs الإدارة الخاصة بالواجهة بونص/RTP/كاشير ---
 @app.route('/api/admin/transfer-cashier', methods=['POST'])
 def admin_transfer_cashier():
+    user_id = session.get('user_id')
     data = request.json or {}
-    amount = float(data.get('amount', 0))
-
-    if amount <= 0:
-        return jsonify({'error': 'المبلغ غير صالح'}), 400
+    telegram_id = data.get('telegram_id') or user_id
 
     conn = get_db_connection()
     cursor = conn.cursor()
+    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user or not user['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح لك للقيام بهذه العملية'}), 403
+
+    amount = float(data.get('amount', 0))
+    if amount <= 0:
+        conn.close()
+        return jsonify({'error': 'المبلغ غير صالح'}), 400
+
     new_balance = update_cashier_balance(cursor, amount)
     conn.commit()
     conn.close()
@@ -339,14 +383,23 @@ def admin_transfer_cashier():
 
 @app.route('/api/admin/set-rtp', methods=['POST'])
 def admin_set_rtp():
+    user_id = session.get('user_id')
     data = request.json or {}
-    rtp_rate = data.get('rtp_rate')
-
-    if rtp_rate is None or not (0 <= float(rtp_rate) <= 100):
-        return jsonify({'error': 'نسبة RTP يجب أن تكون بين 0 و 100'}), 400
+    telegram_id = data.get('telegram_id') or user_id
 
     conn = get_db_connection()
     cursor = conn.cursor()
+    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user or not user['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح لك للقيام بهذه العملية'}), 403
+
+    rtp_rate = data.get('rtp_rate')
+    if rtp_rate is None or not (0 <= float(rtp_rate) <= 100):
+        conn.close()
+        return jsonify({'error': 'نسبة RTP يجب أن تكون بين 0 و 100'}), 400
+
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('win_rate', ?)", (str(rtp_rate),))
     conn.commit()
     conn.close()
@@ -355,12 +408,18 @@ def admin_set_rtp():
 
 @app.route('/api/admin/settings', methods=['GET', 'POST'])
 def admin_settings():
+    user_id = session.get('user_id')
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not user or not user['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح لك للقيام بهذه العملية'}), 403
+
     if request.method == 'POST':
         data = request.json or {}
-        if 'add_cashier' in data:
+        if 'add_cashier' in data and float(data['add_cashier']) != 0:
             add_val = float(data['add_cashier'])
             update_cashier_balance(cursor, add_val)
 
@@ -381,11 +440,14 @@ def admin_settings():
 @app.route('/api/transaction/request', methods=['POST'])
 def transaction_request():
     data = request.json or {}
-    telegram_id = data.get('telegram_id')
+    telegram_id = data.get('telegram_id') or session.get('user_id')
     tx_type = data.get('type')
     method = data.get('method')
     amount = float(data.get('amount', 0))
     tx_number = data.get('tx_number', '')
+
+    if not telegram_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول أولاً'}), 401
 
     if amount <= 0:
         return jsonify({'error': 'المبلغ غير صالح'}), 400
@@ -410,12 +472,19 @@ def transaction_request():
 
 @app.route('/api/admin/transaction/action', methods=['POST'])
 def admin_transaction_action():
+    user_id = session.get('user_id')
     data = request.json or {}
-    tx_id = data.get('tx_id')
-    action = data.get('action')
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح لك'}), 403
+
+    tx_id = data.get('tx_id')
+    action = data.get('action')
 
     tx = cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
     if not tx or tx['status'] != 'pending':
