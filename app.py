@@ -2,9 +2,9 @@ import os
 import sqlite3
 import random
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 DB_NAME = "database.db"
 
 def get_db_connection():
@@ -16,7 +16,7 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # جدول المستخدمين الشامل
+    # جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
@@ -36,7 +36,7 @@ def init_db():
         )
     ''')
     
-    # جدول معاملات الإيداع والسحب
+    # جدول المعاملات (إيداع وسحب)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +69,7 @@ def init_db():
         )
     ''')
 
-    # جدول حسابات الدفع (سيريتل كاش / شام كاش)
+    # جدول حسابات الدفع
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payment_methods (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +79,7 @@ def init_db():
         )
     ''')
 
-    # جدول الإعدادات العامة
+    # جدول الإعدادات العامة والخزينة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -87,13 +87,13 @@ def init_db():
         )
     ''')
     
-    # الإعدادات الافتراضية
     defaults = [
         ('win_rate', '30'),
         ('maintenance', 'off'),
-        ('welcome_bonus', '0'),
-        ('referral_bonus', '0'),
-        ('cashier_balance', '1000.0')
+        ('welcome_bonus', '500'),
+        ('referral_bonus', '100'),
+        ('cashier_balance', '10000.0'),
+        ('jackpot_balance', '254005482.0')
     ]
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
@@ -103,40 +103,61 @@ def init_db():
 
 init_db()
 
+# --- أدوات مساعدة لخصم وإضافة رصيد الكاشيرة ---
+def update_cashier_balance(cursor, amount_change):
+    """تعديل رصيد الخزينة (إيجابي = زيادة الكاشيرة، سلبياً = الخصم من الكاشيرة)"""
+    cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'")
+    current = float(cursor.fetchone()['value'])
+    new_balance = max(0.0, current + amount_change)
+    cursor.execute("UPDATE settings SET value = ? WHERE key = 'cashier_balance'", (str(new_balance),))
+    return new_balance
+
+def get_setting_val(cursor, key_name, default_val="0"):
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key_name,))
+    row = cursor.fetchone()
+    return row['value'] if row else default_val
+
 # Middleware لفحص وضع الصيانة
 @app.before_request
 def check_maintenance():
-    if request.path.startswith('/api/'):
+    if request.path.startswith('/api/') and not request.path.startswith('/api/admin'):
         conn = get_db_connection()
-        m = conn.execute("SELECT value FROM settings WHERE key = 'maintenance'").fetchone()
+        cursor = conn.cursor()
+        m = get_setting_val(cursor, 'maintenance', 'off')
         conn.close()
-        if m and m['value'] == 'on' and not request.path.startswith('/api/admin'):
-            return jsonify({'error': 'البوت والموقع في وضع الصيانة حالياً'}), 533
+        if m == 'on':
+            return jsonify({'error': 'الموقع والبوت في وضع الصيانة حالياً'}), 533
 
+# --- عرض واجهة الموقع الرئيسي ---
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+# --- APIs الحسابات والمستخدمين ---
 @app.route('/api/user/<int:telegram_id>', methods=['GET'])
 def get_user(telegram_id):
     conn = get_db_connection()
     user = conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
     conn.close()
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': 'المستخدم غير موجود'}), 404
     return jsonify(dict(user))
 
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
-    data = request.json
+    data = request.json or {}
     telegram_id = data.get('telegram_id')
-    site_user = data.get('site_user')
-    site_pass = data.get('site_pass')
+    site_user = data.get('site_user', '')
+    site_pass = data.get('site_pass', '')
     
-    if len(site_user) < 6 or not site_pass.isdigit() or len(site_pass) < 6:
-        return jsonify({'error': 'اسم المستخدم يجب أن يكون 6 أحرف على الأقل، وكلمة المرور 6 أرقام'}), 400
+    if len(site_user) < 4 or not str(site_pass).isdigit() or len(str(site_pass)) < 4:
+        return jsonify({'error': 'اسم المستخدم يجب أن يكون 4 أحرف على الأقل، وكلمة المرور 4 أرقام'}), 400
         
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?",
-                       (site_user, site_pass, telegram_id))
+                       (site_user, str(site_pass), telegram_id))
         conn.commit()
         conn.close()
         return jsonify({'message': 'تم إنشاء حساب الموقع بنجاح'})
@@ -144,11 +165,55 @@ def register_site():
         conn.close()
         return jsonify({'error': 'اسم المستخدم هذا مأخوذ بالفعل'}), 400
 
+# --- API مطالبة بالبونص الترحيبي (يخصم من الكاشيرة) ---
+@app.route('/api/claim_welcome_bonus', methods=['POST'])
+def claim_welcome_bonus():
+    data = request.json or {}
+    telegram_id = data.get('telegram_id')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user:
+        conn.close()
+        return jsonify({'error': 'المستخدم غير موجود'}), 404
+
+    if user['got_welcome_bonus'] == 1:
+        conn.close()
+        return jsonify({'error': 'لقد حصلت على البونص الترحيبي سابقاً'}), 400
+
+    bonus_amount = float(get_setting_val(cursor, 'welcome_bonus', '0'))
+    cashier = float(get_setting_val(cursor, 'cashier_balance', '0'))
+
+    if cashier < bonus_amount:
+        conn.close()
+        return jsonify({'error': 'عذراً، رصيد الكاشيرة لا يكفي لإرسال البونص حالياً'}), 400
+
+    # خصم البونص من الكاشيرة وإضافته للعميل
+    update_cashier_balance(cursor, -bonus_amount)
+    new_user_balance = user['balance'] + bonus_amount
+
+    cursor.execute("UPDATE users SET balance = ?, got_welcome_bonus = 1 WHERE telegram_id = ?",
+                   (new_user_balance, telegram_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'message': f'تمت إضافة البونص الترحيبي ({bonus_amount}) بنجاح وخصمه من الكاشيرة',
+        'new_balance': new_user_balance
+    })
+
+# --- API تشغيل الألعاب وتطبيق خوارزمية الربح مع الكاشيرة ---
 @app.route('/api/play', methods=['POST'])
 def play():
-    data = request.json
+    data = request.json or {}
     telegram_id = data.get('telegram_id')
     bet_amount = float(data.get('bet_amount', 0))
+    game_id = data.get('game_id', 'slot_default')
+
+    if bet_amount <= 0:
+        return jsonify({'error': 'قيمة الرهان غير صالحة'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -158,32 +223,140 @@ def play():
         conn.close()
         return jsonify({'error': 'الرصيد غير كافٍ'}), 400
 
-    new_balance = user['balance'] - bet_amount
+    # خصم الرهان من العميل وإضافته للكاشيرة
+    user_balance = user['balance'] - bet_amount
     total_spent = user['total_spent'] + bet_amount
-    
-    win_setting = cursor.execute("SELECT value FROM settings WHERE key = 'win_rate'").fetchone()
-    win_rate = int(win_setting['value']) if win_setting else 30
+    update_cashier_balance(cursor, bet_amount)
 
-    is_win = random.randint(1, 100) <= win_rate
-    multiplier = 0
-    payout = 0
+    # جلب نسبة الفوز ورصيد الكاشيرة الحالية
+    win_rate = int(get_setting_val(cursor, 'win_rate', '30'))
+    current_cashier = float(get_setting_val(cursor, 'cashier_balance', '0'))
 
-    if is_win:
-        multiplier = random.choice([1.5, 2.0, 3.0, 5.0])
-        payout = bet_amount * multiplier
-        new_balance += payout
+    # احتمالية الفوز الشرطية (تتطلب وجود رصيد كافٍ في الكاشيرة)
+    random_roll = random.randint(1, 100)
+    is_win = False
+    multiplier = 0.0
+    payout = 0.0
 
-    cursor.execute("UPDATE users SET balance = ?, total_spent = ? WHERE telegram_id = ?", 
-                   (new_balance, total_spent, telegram_id))
+    possible_multipliers = [1.5, 2.0, 3.0, 5.0]
+    target_multiplier = random.choice(possible_multipliers)
+    calculated_payout = bet_amount * target_multiplier
+
+    # شرط الفوز: تحقق النسبة + توفر السيولة للكاشيرة لدفعه
+    if random_roll <= win_rate and current_cashier >= calculated_payout:
+        is_win = True
+        multiplier = target_multiplier
+        payout = calculated_payout
+        
+        # إضافة الفوز للعميل وخصمه من الكاشيرة
+        user_balance += payout
+        update_cashier_balance(cursor, -payout)
+
+    cursor.execute("UPDATE users SET balance = ?, total_spent = ? WHERE telegram_id = ?",
+                   (user_balance, total_spent, telegram_id))
     conn.commit()
     conn.close()
 
     return jsonify({
+        'game_id': game_id,
         'win': is_win,
         'multiplier': multiplier,
         'payout': payout,
-        'new_balance': new_balance
+        'new_balance': user_balance
     })
+
+# --- API التحكم والإدارة (Admin APIs) ---
+@app.route('/api/admin/settings', methods=['GET', 'POST'])
+def admin_settings():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        data = request.json or {}
+        # إضافة رصيد للكاشيرة مباشرة
+        if 'add_cashier' in data:
+            add_val = float(data['add_cashier'])
+            update_cashier_balance(cursor, add_val)
+
+        # تعديل باقي الإعدادات (RTP / الصيانة / البونص)
+        for key in ['win_rate', 'maintenance', 'welcome_bonus', 'referral_bonus']:
+            if key in data:
+                cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(data[key])))
+
+        conn.commit()
+
+    # جلب كافة الإعدادات
+    cursor.execute("SELECT * FROM settings")
+    rows = cursor.fetchall()
+    settings_dict = {row['key']: row['value'] for row in rows}
+    conn.close()
+
+    return jsonify(settings_dict)
+
+# --- API طلبات الإيداع والسحب وتأثيرها على الكاشيرة ---
+@app.route('/api/transaction/request', methods=['POST'])
+def transaction_request():
+    data = request.json or {}
+    telegram_id = data.get('telegram_id')
+    tx_type = data.get('type') # deposit / withdraw
+    method = data.get('method')
+    amount = float(data.get('amount', 0))
+    tx_number = data.get('tx_number', '')
+
+    if amount <= 0:
+        return jsonify({'error': 'المبلغ غير صالح'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if tx_type == 'withdraw':
+        user = cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if not user or user['balance'] < amount:
+            conn.close()
+            return jsonify({'error': 'رصيد العميل لا يكفي للسحب'}), 400
+
+    cursor.execute('''
+        INSERT INTO transactions (telegram_id, type, method, amount, tx_number)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (telegram_id, tx_type, method, amount, tx_number))
+    
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'تم تقديم الطلب بنجاح وهو قيد المراجعة'})
+
+@app.route('/api/admin/transaction/action', methods=['POST'])
+def admin_transaction_action():
+    data = request.json or {}
+    tx_id = data.get('tx_id')
+    action = data.get('action') # approve / reject
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    tx = cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+    if not tx or tx['status'] != 'pending':
+        conn.close()
+        return jsonify({'error': 'المعاملة غير موجودة أو معالجة سابقاً'}), 400
+
+    if action == 'approve':
+        if tx['type'] == 'deposit':
+            # الإيداع يزيد رصيد العميل وتزيد معه الخزينة (الكاشيرة)
+            cursor.execute("UPDATE users SET balance = balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?",
+                           (tx['amount'], tx['telegram_id']))
+            update_cashier_balance(cursor, tx['amount'])
+        elif tx['type'] == 'withdraw':
+            # السحب يخصم رصيد العميل ويزيد الكاشيرة المتاحة في البوت
+            cursor.execute("UPDATE users SET balance = balance - ?, withdraw_count = withdraw_count + 1 WHERE telegram_id = ?",
+                           (tx['amount'], tx['telegram_id']))
+            update_cashier_balance(cursor, tx['amount'])
+
+        cursor.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (tx_id,))
+    else:
+        cursor.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (tx_id,))
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': f'تمت معالجة الطلب بـ {action}'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
