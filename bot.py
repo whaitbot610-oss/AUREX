@@ -4,6 +4,7 @@ import sqlite3
 import logging
 import threading
 import random
+import string
 from datetime import datetime
 from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -26,12 +27,11 @@ if not SERVER_URL.startswith("https://"):
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ================= =========================================
-# 2. إدارة قاعدة البيانات عالية الكفاءة (High Concurrency / WAL Mode)
+# 2. إدارة قاعدة البيانات عالية الكفاءة (WAL Mode)
 # ==========================================================
 def get_db():
     conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    # تفعيل نظام WAL لزيادة سرعة وكفاءة التعامل مع قاعدة البيانات وتحمل الضغط العالي
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
@@ -52,13 +52,15 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS used_codes (telegram_id INTEGER, code TEXT, PRIMARY KEY (telegram_id, code))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS cashiers (bot_id TEXT PRIMARY KEY, balance REAL DEFAULT 0.0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS admins (telegram_id INTEGER PRIMARY KEY)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS payment_methods (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, number TEXT, active INTEGER DEFAULT 1)''')
     
     # الإعدادات الافتراضية
-    cursor.execute("INSERT OR IGNORE INTO cashiers (bot_id, balance) VALUES (?, 0.0)", (BOT_ID,))
+    cursor.execute("INSERT OR IGNORE INTO cashiers (bot_id, balance) VALUES (?, 10000.0)", (BOT_ID,))
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('win_rate', '30')")
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('welcome_bonus', '10.0')") # البونص الترحيبي الافتراضي
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('maintenance', '0')") # وضع الصيانة
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('welcome_bonus', '10.0')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('maintenance', '0')")
     cursor.execute("INSERT OR IGNORE INTO admins (telegram_id) VALUES (?)", (MAIN_ADMIN_ID,))
+    cursor.execute("INSERT OR IGNORE INTO payment_methods (name, number) VALUES ('سيريتل كاش', '0987654321')")
     conn.commit()
     conn.close()
 
@@ -81,8 +83,14 @@ def is_admin(user_id):
     conn.close()
     return bool(row)
 
+def update_cashier(amount_change):
+    conn = get_db()
+    conn.execute("UPDATE cashiers SET balance = MAX(0.0, balance + ?) WHERE bot_id = ?", (amount_change, BOT_ID))
+    conn.commit()
+    conn.close()
+
 # ================= =========================================
-# 3. خادم الويب (Flask) + لوحة الموقع
+# 3. خادم الويب (Flask)
 # ==========================================================
 web_app = Flask(__name__)
 web_app.secret_key = "aurex_ultra_secure_secret_key"
@@ -121,8 +129,6 @@ HTML_ADMIN = """
         <div class="card">
             <h3>💰 شحن رصيد كاشيرة البوت</h3>
             <form method="POST" action="/admin/add_cashier">
-                <label>اختر البوت:</label>
-                <select name="bot_id"><option value="bot_main">البوت الرئيسي (bot_main)</option></select>
                 <label>المبلغ المراد إضافته (NSP):</label>
                 <input type="number" step="0.01" name="amount" required>
                 <button type="submit">إضافة رصيد للكاشيرة</button>
@@ -130,20 +136,11 @@ HTML_ADMIN = """
         </div>
 
         <div class="card">
-            <h3>🎰 خوارزمية الربح والخسارة</h3>
+            <h3>🎰 خوارزمية الربح والخسارة (RTP)</h3>
             <form method="POST" action="/admin/set_algorithm">
                 <label>نسبة فوز اللاعبين %:</label>
                 <input type="number" min="0" max="100" name="win_rate" value="{{ win_rate }}" required>
                 <button type="submit">حفظ الخوارزمية</button>
-            </form>
-        </div>
-
-        <div class="card">
-            <h3>📢 قنوات الاشتراك الإجباري</h3>
-            <form method="POST" action="/admin/set_channels">
-                <label>القنوات (مفصولة بفاصلة مثال: @channel1, @channel2):</label>
-                <input type="text" name="channels" value="{{ channels }}">
-                <button type="submit">تحديث القنوات</button>
             </form>
         </div>
         <a href="/admin/logout" style="color: #ef4444; text-decoration: none;">تسجيل الخروج</a>
@@ -175,7 +172,7 @@ HTML_GAME = """
     <div class="card" id="login-section" style="display:none;">
         <h3>🔑 تسجيل الدخول لحساب الموقع</h3>
         <input type="text" id="username" placeholder="اسم المستخدم (6 أحرف فأكثر)">
-        <input type="password" id="password" placeholder="كلمة المرور (أحرف وأرقام)">
+        <input type="password" id="password" placeholder="كلمة المرور">
         <button onclick="login()">دخول</button>
     </div>
 
@@ -272,18 +269,14 @@ def admin_panel_web():
     cashier = conn.execute("SELECT balance FROM cashiers WHERE bot_id = ?", (BOT_ID,)).fetchone()
     cashier_bal = cashier['balance'] if cashier else 0.0
     win_rate = get_setting('win_rate', '30')
-    channels = get_setting('forced_channels', '')
     conn.close()
-    return render_template_string(HTML_ADMIN, total_users=total_users, total_balance=f"{total_bal:.2f}", cashier_balance=f"{cashier_bal:.2f}", win_rate=win_rate, channels=channels, msg=request.args.get('msg'))
+    return render_template_string(HTML_ADMIN, total_users=total_users, total_balance=f"{total_bal:.2f}", cashier_balance=f"{cashier_bal:.2f}", win_rate=win_rate, msg=request.args.get('msg'))
 
 @web_app.route('/admin/add_cashier', methods=['POST'])
 def admin_add_cashier():
     if not session.get('admin_logged'): return redirect('/admin/login')
     amt = float(request.form.get('amount', 0))
-    conn = get_db()
-    conn.execute("UPDATE cashiers SET balance = balance + ? WHERE bot_id = ?", (amt, BOT_ID))
-    conn.commit()
-    conn.close()
+    update_cashier(amt)
     return redirect('/admin?msg=تم+إضافة+الرصيد+للكاشيرة+بنجاح')
 
 @web_app.route('/admin/set_algorithm', methods=['POST'])
@@ -291,12 +284,6 @@ def admin_set_algorithm():
     if not session.get('admin_logged'): return redirect('/admin/login')
     set_setting('win_rate', request.form.get('win_rate'))
     return redirect('/admin?msg=تم+تحديث+خوارزمية+الألعاب')
-
-@web_app.route('/admin/set_channels', methods=['POST'])
-def admin_set_channels():
-    if not session.get('admin_logged'): return redirect('/admin/login')
-    set_setting('forced_channels', request.form.get('channels', ''))
-    return redirect('/admin?msg=تم+تحديث+قنوات+الاشتراك')
 
 @web_app.route('/admin/logout')
 def admin_logout():
@@ -329,19 +316,28 @@ def api_spin():
     user_id = data.get('telegram_id')
     conn = get_db()
     u = conn.execute("SELECT balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    cashier = conn.execute("SELECT balance FROM cashiers WHERE bot_id = ?", (BOT_ID,)).fetchone()
+    cashier_bal = cashier['balance'] if cashier else 0.0
+
     if not u or u['balance'] < 1.0:
         conn.close()
         return jsonify({"success": False, "message": "رصيدك غير كافٍ!"})
 
     win_rate = int(get_setting('win_rate', '30'))
     symbols = ["🍎", "🍋", "🍇", "🔔", "💎", "7️⃣"]
-    is_win = random.randint(1, 100) <= win_rate
+    
+    # الرهان يذهب للكاشيرة
+    update_cashier(1.0)
+    
+    # الفوز يتطلب تحقق النسبة + سيولة الكاشيرة
+    is_win = (random.randint(1, 100) <= win_rate) and (cashier_bal >= 5.0)
     
     if is_win:
         s = random.choice(symbols)
         r1 = r2 = r3 = s
         win = 5.0
-        msg = f"🎉 فوز كبير! ربحت 5.00 NSP"
+        msg = "🎉 فوز كبير! ربحت 5.00 NSP"
+        update_cashier(-5.0)
     else:
         r1, r2, r3 = random.choice(symbols), random.choice(symbols), random.choice(symbols)
         while r1 == r2 == r3: r3 = random.choice(symbols)
@@ -362,9 +358,8 @@ def run_flask():
 # ================= =========================================
 # 4. وظائف المساعدة والأمان
 # ==========================================================
-def validate_username(username): return len(username) >= 6
-def validate_password(password):
-    return len(password) >= 6 and bool(re.search(r'[a-zA-Z]', password)) and bool(re.search(r'\d', password))
+def validate_username(username): return len(username) >= 4
+def validate_password(password): return len(password) >= 4
 
 async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     channels_str = get_setting('forced_channels', '')
@@ -378,27 +373,24 @@ async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
     return True
 
 # ================= =========================================
-# 5. معالجة أوامر وقوائم البوت
+# 5. معالجة الأوامر والقوائم
 # ==========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     conn = get_db()
     cursor = conn.cursor()
 
-    # تحديث نشاط العميل وحالة الحظر
     db_user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user.id,)).fetchone()
     if db_user and db_user['is_banned']:
         conn.close()
         await update.message.reply_text("🚫 حسابك محظور من استخدام البوت.")
         return
 
-    # فحص صيانة البوت
     if get_setting('maintenance', '0') == '1' and not is_admin(user.id):
         conn.close()
         await update.message.reply_text("🛠 البوت حالياً في حالة صيانة وتحديث، يرجى المحاولة لاحقاً.")
         return
 
-    # فحص الاشتراك الإجباري
     if not await check_forced_sub(user.id, context):
         channels = get_setting('forced_channels', '')
         btns = [[InlineKeyboardButton(f"اشترك هنا: {ch}", url=f"https://t.me/{ch.replace('@','')}")] for ch in channels.split(',') if ch]
@@ -413,20 +405,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO users (telegram_id, username, referred_by) VALUES (?, ?, ?)", 
                        (user.id, user.username or user.first_name, ref_by))
         conn.commit()
-        
-        # إشعار الداعي عند دخول عميل جديد
         if ref_by:
             try:
                 await context.bot.send_message(ref_by, f"🎉 **انضم عميل جديد عبر رابط إحالتك!**\n🆔 العميل: `{user.first_name}`", parse_mode="Markdown")
             except Exception: pass
-
         db_user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user.id,)).fetchone()
 
     cursor.execute("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE telegram_id = ?", (user.id,))
     conn.commit()
     conn.close()
 
-    # عطل الحماية تم حله هنا بضمان استجابة أزرار الحماية تماماً
     if not db_user['security_passed']:
         keyboard = [
             [InlineKeyboardButton("حمصية 🌺", callback_data="sec_wrong")],
@@ -472,7 +460,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ================= =========================================
-# 6. معالج التفاعلات والأزرار (Callback Router)
+# 6. معالج التفاعلات والأزرار
 # ==========================================================
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -483,15 +471,23 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- حلاوة الجبن والإجابة الصحيحة والخاطئة والبونص ---
     if data == "sec_correct":
         bonus_amt = float(get_setting('welcome_bonus', '10.0'))
-        cursor.execute("UPDATE users SET security_passed = 1, balance = balance + ? WHERE telegram_id = ?", (bonus_amt, user_id))
-        conn.commit()
-        conn.close()
-        
-        bonus_msg = f"\n🎉 **حصلت على بونص ترحيبي بقيمة {bonus_amt:.2f} NSP!**" if bonus_amt > 0 else ""
-        await query.message.edit_text(f"كفو عليك! 🍯{bonus_msg}", parse_mode="Markdown")
+        cashier = cursor.execute("SELECT balance FROM cashiers WHERE bot_id = ?", (BOT_ID,)).fetchone()
+        cashier_bal = cashier['balance'] if cashier else 0.0
+
+        if cashier_bal >= bonus_amt:
+            update_cashier(-bonus_amt)
+            cursor.execute("UPDATE users SET security_passed = 1, balance = balance + ? WHERE telegram_id = ?", (bonus_amt, user_id))
+            conn.commit()
+            conn.close()
+            await query.message.edit_text(f"كفو عليك! 🍯\n🎉 **حصلت على بونص ترحيبي بقيمة {bonus_amt:.2f} NSP وتم خصمه من الكاشيرة!**", parse_mode="Markdown")
+        else:
+            cursor.execute("UPDATE users SET security_passed = 1 WHERE telegram_id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+            await query.message.edit_text("كفو عليك! 🍯 (لم يتوفر رصيد كافٍ بالكاشيرة لمنح البونص حالياً).")
+
         await show_main_menu(update, context)
         return
 
@@ -519,12 +515,16 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "create_site_account":
         context.user_data['state'] = 'WAIT_SITE_USER'
-        await update.effective_chat.send_message("🔑 أدخل اسم المستخدم للموقع (6 أحرف على الأقل):")
+        await update.effective_chat.send_message("🔑 أدخل اسم المستخدم للموقع (4 أحرف على الأقل):")
 
     elif data in ["dep_site", "dep_bot"]:
+        conn = get_db()
+        pm = conn.execute("SELECT * FROM payment_methods WHERE active = 1").fetchall()
+        conn.close()
+        pm_txt = "\n".join([f"• {p['name']}: `{p['number']}`" for p in pm]) if pm else "سيريتل كاش"
         context.user_data['target_type'] = "الموقع" if data == "dep_site" else "البوت"
         context.user_data['state'] = 'WAIT_DEP_AMT'
-        await update.effective_chat.send_message(f"📥 أرسل المبلغ المراد شحنه لـ **{context.user_data['target_type']}** بعملة NSP:", parse_mode="Markdown")
+        await update.effective_chat.send_message(f"📥 **طرق الدفع المتاحة:**\n{pm_txt}\n\nأرسل المبلغ المراد شحنه لـ **{context.user_data['target_type']}** بعملة NSP:", parse_mode="Markdown")
 
     elif data in ["with_site", "with_bot"]:
         context.user_data['target_type'] = "الموقع" if data == "with_site" else "البوت"
@@ -559,7 +559,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             txt += f"• {l['type']} | {l['amount']} NSP | الحالة: {l['status']}\n"
         await update.effective_chat.send_message(txt, parse_mode="Markdown")
 
-    # --- إدارة الآدمن من داخل البوت ---
+    # --- لوحة التحكم الخاصة بالآدمن ---
     elif data == "admin_panel" and is_admin(user_id):
         await show_admin_panel(update, context)
 
@@ -568,6 +568,22 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cashier = conn.execute("SELECT balance FROM cashiers WHERE bot_id = ?", (BOT_ID,)).fetchone()
         conn.close()
         await update.effective_chat.send_message(f"🏦 **رصيد الكاشيرة الحالي:** `{cashier['balance'] if cashier else 0:.2f} NSP`", parse_mode="Markdown")
+
+    elif data == "adm_edit_user_bal" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_ADD_BAL_ID'
+        await update.effective_chat.send_message("👤 أدخل آيدي العميل المراد تعديل رصيده:")
+
+    elif data == "adm_set_bonus" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_BONUS_AMT'
+        await update.effective_chat.send_message("🎁 أدخل قيمة البونص الترحيبي الجديد بـ NSP:")
+
+    elif data == "adm_set_rtp" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_RTP'
+        await update.effective_chat.send_message("🎯 أدخل نسبة فوز ألعاب الكازينو RTP (من 0 إلى 100):")
+
+    elif data == "adm_pay_methods" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_PAY_METHOD'
+        await update.effective_chat.send_message("💳 أدخل رقم سيريتل كاش / طريقة الدفع الجديدة:")
 
     elif data == "adm_requests" and is_admin(user_id):
         conn = get_db()
@@ -590,9 +606,12 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
             if 'deposit' in r['type']:
                 conn.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (r['amount'], r['telegram_id']))
+                update_cashier(r['amount'])
+            elif 'withdraw' in r['type']:
+                update_cashier(r['amount']) # السحب يزيد رصيد الخزينة/الكاشيرة
             conn.commit()
             await context.bot.send_message(r['telegram_id'], f"✅ تم قبول طلب الـ {r['type']} بقيمة {r['amount']} NSP")
-            await query.message.edit_text("✅ تم قبول الطلب.")
+            await query.message.edit_text("✅ تم قبول الطلب وترحيله للكاشيرة.")
         conn.close()
 
     elif data.startswith("rej_req_") and is_admin(user_id):
@@ -667,7 +686,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🏦 رصيد الكاشيرة", callback_data="adm_cashier"), InlineKeyboardButton("📥📤 طلبات الشحن والسحب", callback_data="adm_requests")],
-        [InlineKeyboardButton("🎁 توليد أكواد هدية (1 / 10 / 50)", callback_data="adm_gen_batch"), InlineKeyboardButton("❌ إلغاء تفعيل كود", callback_data="adm_disable_code")],
+        [InlineKeyboardButton("💰 تعديل رصيد مستخدم", callback_data="adm_edit_user_bal"), InlineKeyboardButton("🎁 تعديل البونص الترحيبي", callback_data="adm_set_bonus")],
+        [InlineKeyboardButton("🎯 تعديل نسبة الربح (RTP)", callback_data="adm_set_rtp"), InlineKeyboardButton("💳 حسابات سيريتل كاش", callback_data="adm_pay_methods")],
+        [InlineKeyboardButton("🎁 توليد أكواد هدية", callback_data="adm_gen_batch"), InlineKeyboardButton("❌ إلغاء تفعيل كود", callback_data="adm_disable_code")],
         [InlineKeyboardButton("🔍 تفاصيل عميل", callback_data="adm_user_details"), InlineKeyboardButton("📊 المتصلين والأعداد", callback_data="adm_stats")],
         [InlineKeyboardButton("🛠 وضع الصيانة", callback_data="adm_toggle_maint"), InlineKeyboardButton("👮‍♂️ إضافة آدمن", callback_data="adm_add_admin")],
         [InlineKeyboardButton("🚫 حظر مستخدم", callback_data="adm_ban_user"), InlineKeyboardButton("✅ إلغاء حظر", callback_data="adm_unban_user")],
@@ -677,7 +698,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_chat.send_message("⚙️ **لوحة التحكم الشاملة للآدمن:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # ================= =========================================
-# 7. معالجة النصوص والوسائط مع حماية الضغط العالي
+# 7. معالجة النصوص والرسائل الحرة (State Machine)
 # ==========================================================
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -691,15 +712,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # إنشاء حساب الموقع
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
-            await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 أحرف على الأقل. أعد الإدخال:")
+            await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 4 أحرف على الأقل. أعد الإدخال:")
             return
         context.user_data['temp_site_user'] = text
         context.user_data['state'] = 'WAIT_SITE_PASS'
-        await update.message.reply_text("أدخل كلمة المرور (يجب أن تحتوي على أحرف وأرقام معاً وتكون 6 عناصر على الأقل):")
+        await update.message.reply_text("أدخل كلمة المرور (4 عناصر على الأقل):")
 
     elif state == 'WAIT_SITE_PASS':
         if not validate_password(text):
-            await update.message.reply_text("❌ كلمة المرور ضعيفة! يجب أن تدمج بين الأحرف والأرقام وتكون 6 عناصر على الأقل:")
+            await update.message.reply_text("❌ كلمة المرور قصيرة! أعد الإدخال:")
             return
         site_u = context.user_data.get('temp_site_user')
         try:
@@ -711,7 +732,81 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ اسم المستخدم مأخوذ بالفعل، أدخل اسم آخر:")
             context.user_data['state'] = 'WAIT_SITE_USER'
 
-    # توليد دفعة أكواد (1 أو 10 أو 50 كود دفعة واحدة) مع الخصم من الكاشيرة
+    # شحن الرصيد
+    elif state == 'WAIT_DEP_AMT':
+        try:
+            amt = float(text)
+            context.user_data['dep_amt'] = amt
+            context.user_data['state'] = 'WAIT_DEP_TX'
+            await update.message.reply_text("أدخل رقم إشعار/عملية التحويل أو رقم سيريتل كاش:")
+        except ValueError: await update.message.reply_text("أدخل مبلغ صحيح.")
+
+    elif state == 'WAIT_DEP_TX':
+        amt, t_type = context.user_data.get('dep_amt'), context.user_data.get('target_type')
+        cursor.execute("INSERT INTO transactions (telegram_id, type, amount, tx_number) VALUES (?, ?, ?, ?)", (user_id, f"deposit_{t_type}", amt, text))
+        conn.commit()
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم رفع طلب الشحن للإدارة بنجاح.")
+        await context.bot.send_message(MAIN_ADMIN_ID, f"📥 **طلب شحن جديد ({t_type})!**\n• العميل: `{user_id}`\n• المبلغ: {amt} NSP\n• الرقم: `{text}`", parse_mode="Markdown")
+
+    # سحب الرصيد
+    elif state == 'WAIT_WITH_AMT':
+        try:
+            amt = float(text)
+            u = cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+            if not u or u['balance'] < amt:
+                await update.message.reply_text("❌ رصيدك الحالي لا يكفي لهذا السحب.")
+                return
+            context.user_data['with_amt'] = amt
+            context.user_data['state'] = 'WAIT_WITH_TX'
+            await update.message.reply_text("أدخل رقم حساب سيريتل كاش لاستلام المبلغ:")
+        except ValueError: await update.message.reply_text("أدخل مبلغ صحيح.")
+
+    elif state == 'WAIT_WITH_TX':
+        amt, t_type = context.user_data.get('with_amt'), context.user_data.get('target_type')
+        cursor.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amt, user_id))
+        cursor.execute("INSERT INTO transactions (telegram_id, type, amount, tx_number) VALUES (?, ?, ?, ?)", (user_id, f"withdraw_{t_type}", amt, text))
+        conn.commit()
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم خصم المبلغ ورفع طلب السحب للإدارة بنجاح.")
+        await context.bot.send_message(MAIN_ADMIN_ID, f"📤 **طلب سحب جديد ({t_type})!**\n• العميل: `{user_id}`\n• المبلغ: {amt} NSP\n• حساب الاستلام: `{text}`", parse_mode="Markdown")
+
+    # إضافة رصيد لعميل مباشرة (الآدمن)
+    elif state == 'ADM_WAIT_ADD_BAL_ID' and is_admin(user_id):
+        context.user_data['target_user'] = text
+        context.user_data['state'] = 'ADM_WAIT_ADD_BAL_AMT'
+        await update.message.reply_text("أدخل المبلغ المراد إضافته (أو خصمه بإضافة -):")
+
+    elif state == 'ADM_WAIT_ADD_BAL_AMT' and is_admin(user_id):
+        target = context.user_data.get('target_user')
+        try:
+            amt = float(text)
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ? OR site_username = ?", (amt, target, target))
+            conn.commit()
+            context.user_data.clear()
+            await update.message.reply_text(f"✅ تم تعديل رصيد العميل `{target}` بـ {amt} NSP بنجاح.", parse_mode="Markdown")
+        except ValueError: await update.message.reply_text("أدخل مبلغ صحيح.")
+
+    # تعديل البونص الترحيبي
+    elif state == 'ADM_WAIT_BONUS_AMT' and is_admin(user_id):
+        set_setting('welcome_bonus', text)
+        context.user_data.clear()
+        await update.message.reply_text(f"✅ تم تعديل قيمة البونص الترحيبي إلى {text} NSP.")
+
+    # تعديل نسبة الربح RTP
+    elif state == 'ADM_WAIT_RTP' and is_admin(user_id):
+        set_setting('win_rate', text)
+        context.user_data.clear()
+        await update.message.reply_text(f"🎯 تم تعديل خوارزمية RTP إلى {text}%.")
+
+    # تعديل وسائل الدفع
+    elif state == 'ADM_WAIT_PAY_METHOD' and is_admin(user_id):
+        cursor.execute("INSERT INTO payment_methods (name, number) VALUES ('سيريتل كاش', ?)", (text,))
+        conn.commit()
+        context.user_data.clear()
+        await update.message.reply_text(f"💳 تم إضافة حساب سيريتل كاش الجديد: `{text}`", parse_mode="Markdown")
+
+    # توليد دفعة أكواد
     elif state == 'ADM_GIFT_AMT' and is_admin(user_id):
         try:
             context.user_data['gift_amt'] = float(text)
@@ -735,13 +830,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             cashier = cursor.execute("SELECT balance FROM cashiers WHERE bot_id = ?", (BOT_ID,)).fetchone()
             if not cashier or cashier['balance'] < total_cost:
-                await update.message.reply_text(f"❌ **رصيد الكاشيرة غير كافٍ!**\nالمطلوب: {total_cost:.2f} NSP\nمتوفر في الكاشيرة: {cashier['balance'] if cashier else 0:.2f} NSP")
+                await update.message.reply_text(f"❌ **رصيد الكاشيرة غير كافٍ!**\nالمطلوب: {total_cost:.2f} NSP\nمتوفر: {cashier['balance'] if cashier else 0:.2f} NSP")
                 context.user_data.clear()
                 return
 
-            import string
             generated = []
-            cursor.execute("UPDATE cashiers SET balance = balance - ? WHERE bot_id = ?", (total_cost, BOT_ID))
+            update_cashier(-total_cost)
             
             for _ in range(count):
                 code = "AUREX-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -792,7 +886,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         await update.message.reply_text(f"❌ تم إلغاء تفعيل الكود `{text}` بنجاح.", parse_mode="Markdown")
 
-    # إرسال خاص
+    # إرسال خاص وإذاعة
     elif state == 'ADM_WAIT_PRIV_ID' and is_admin(user_id):
         context.user_data['target_priv'] = int(text)
         context.user_data['state'] = 'ADM_WAIT_PRIV_TEXT'
@@ -806,7 +900,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ تم إرسال الرسالة الخاص بنجاح.")
         except Exception as e: await update.message.reply_text(f"❌ تعذر الإرسال: {e}")
 
-    # مراسلة الدعم الفني
+    elif state == 'ADM_WAIT_BROADCAST' and is_admin(user_id):
+        context.user_data.clear()
+        users = cursor.execute("SELECT telegram_id FROM users WHERE is_banned = 0").fetchall()
+        count = 0
+        for u in users:
+            try:
+                await context.bot.send_message(u['telegram_id'], f"📢 **تنبيه عام من الإدارة:**\n\n{text}", parse_mode="Markdown")
+                count += 1
+            except Exception: pass
+        await update.message.reply_text(f"✅ تم بث الرسالة بنجاح لـ {count} عميل.")
+
+    # الدعم الفني
     elif state == 'WAIT_SUPPORT':
         context.user_data.clear()
         await update.message.reply_text("✅ تم إرسال رسالتك للدعم الفني وسيجيبك أحد ممثلينا قريباً.")
@@ -821,23 +926,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ تم إرسال الرد للعميل.")
         except Exception as e: await update.message.reply_text(f"❌ خطأ بالإرسال: {e}")
 
-    # شحن وسحب وإدخال كود
-    elif state == 'WAIT_DEP_AMT':
-        try:
-            amt = float(text)
-            context.user_data['dep_amt'] = amt
-            context.user_data['state'] = 'WAIT_DEP_TX'
-            await update.message.reply_text("أدخل رقم إشعار/عملية التحويل:")
-        except ValueError: await update.message.reply_text("أدخل مبلغ صحيح.")
-
-    elif state == 'WAIT_DEP_TX':
-        amt, t_type = context.user_data.get('dep_amt'), context.user_data.get('target_type')
-        cursor.execute("INSERT INTO transactions (telegram_id, type, amount, tx_number) VALUES (?, ?, ?, ?)", (user_id, f"deposit_{t_type}", amt, text))
-        conn.commit()
-        context.user_data.clear()
-        await update.message.reply_text("✅ تم رفع طلب الشحن للإدارة بنجاح.")
-        await context.bot.send_message(MAIN_ADMIN_ID, f"📥 **طلب شحن جديد ({t_type})!**\n• العميل: `{user_id}`\n• المبلغ: {amt} NSP\n• الرقم: `{text}`", parse_mode="Markdown")
-
+    # إدخال كود هدية
     elif state == 'WAIT_GIFT_CODE':
         code_row = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND is_active = 1", (text,)).fetchone()
         if code_row and code_row['used_count'] < code_row['max_uses']:
@@ -854,7 +943,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn.close()
 
-# معالجة استقبال الصور للإصابات والدعم والإذاعة الجماعية
+# معالجة الصور
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     state = context.user_data.get('state')
@@ -898,7 +987,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    print("🚀 تم تشغيل المنصة بنجاح بعد التطوير...")
+    print("🚀 تم تشغيل المنصة وتحديث البوت بنجاح...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
