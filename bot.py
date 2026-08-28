@@ -5,12 +5,31 @@ import logging
 import random
 import string
 import html
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
     filters, ContextTypes
 )
+
+# ==========================================================
+# 0. خادم صحة الخدمة لبيئة Render (Health Check Server)
+# ==========================================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK - AUREX BOT IS RUNNING")
+
+    def log_message(self, format, *args):
+        return # تعطيل طباعة الطلبات لتفادي ازدحام السجلات
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
 
 # ==========================================================
 # 1. الإعدادات الأساسية
@@ -304,7 +323,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"──────────────────"
     )
 
-    # زر الـ WebApp مؤمن
     try:
         webapp_btn = InlineKeyboardButton("🌐 فتح الكازينو (WebApp)", web_app=WebAppInfo(url=SERVER_URL))
     except Exception:
@@ -1104,8 +1122,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logging.error("Exception while handling an update:", exc_info=context.error)
 
 def main():
+    # 1. تشغيل سيرفر الصحة لـ Render
+    threading.Thread(target=start_health_check_server, daemon=True).start()
+
+    # 2. تهيئة قاعدة البيانات
     init_db()
 
+    # 3. تشغيل تطبيق التلغرام
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel_command))
@@ -1115,7 +1138,7 @@ def main():
     
     app.add_error_handler(error_handler)
 
-    print("🚀 تم تشغيل البوت بنجاح...")
+    print("🚀 تم تشغيل سيرفر الويب والبوت بنجاح...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
