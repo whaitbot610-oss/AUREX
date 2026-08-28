@@ -68,6 +68,7 @@ def init_db():
         deposit_count INTEGER DEFAULT 0,
         withdraw_count INTEGER DEFAULT 0,
         referrals_count INTEGER DEFAULT 0,
+        spins_count INTEGER DEFAULT 0,
         referred_by INTEGER,
         got_welcome_bonus INTEGER DEFAULT 0,
         security_passed INTEGER DEFAULT 0,
@@ -87,6 +88,7 @@ def init_db():
         'deposit_count': 'INTEGER DEFAULT 0',
         'withdraw_count': 'INTEGER DEFAULT 0',
         'referrals_count': 'INTEGER DEFAULT 0',
+        'spins_count': 'INTEGER DEFAULT 0',
         'referred_by': 'INTEGER',
         'got_welcome_bonus': 'INTEGER DEFAULT 0',
         'security_passed': 'INTEGER DEFAULT 0',
@@ -151,7 +153,10 @@ def init_db():
         ('min_deposit', '50'),
         ('min_withdraw', '100'),
         ('cashier_balance', '10000.0'),
-        ('forced_channels', '')
+        ('forced_channels', ''),
+        ('game_win_rate', '30'),       # نسبة الفوز بالافتراضي 30%
+        ('game_min_prize', '10'),      # أدنى جائزة عند الربح
+        ('game_max_prize', '100')      # أقصى جائزة عند الربح
     ]
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, str(val)))
@@ -278,7 +283,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("UPDATE users SET referrals_count = referrals_count + 1 WHERE telegram_id = ?", (ref_by,))
             conn.commit()
             try:
-                await context.bot.send_message(ref_by, f"🎉 <b>انضم عميل جديد عبر رابط إحالتك!</b>\n🆔 العميل: <code>{html.escape(user.first_name)}</code>", parse_mode="HTML")
+                await context.bot.send_message(ref_by, f"🎉 <b>انضم عميل جديد عبر رابط إحالتك!</b>\n🆔 العميل: <code>{html.escape(user.first_name)}</code>\n📌 سيتم منحك فرصة لعب بمجرد ربط هذا العميل لحسابه بالموقع!", parse_mode="HTML")
             except Exception: pass
             
         db_user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user.id,)).fetchone()
@@ -322,6 +327,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     site_info = f"<code>{html.escape(db_user['site_username'])}</code>" if db_user and db_user['site_username'] else "❌ غير مربوط"
     bot_bal = db_user['balance'] if db_user else 0.0
     site_bal = db_user['site_balance'] if db_user and 'site_balance' in db_user.keys() else 0.0
+    spins = db_user['spins_count'] if db_user and 'spins_count' in db_user.keys() else 0
 
     text = (
         f"👑 <b>منصة AUREX المتطورة</b> 👑\n"
@@ -331,6 +337,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🌐 حساب الموقع: {site_info}\n"
         f"💰 رصيد البوت: <b>{bot_bal:.2f} NSP</b>\n"
         f"💎 رصيد الموقع: <b>{site_bal:.2f} NSP</b>\n"
+        f"🎡 فرص اللعب المتاحة: <b>{spins} محاولة</b>\n"
         f"──────────────────"
     )
 
@@ -341,6 +348,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [webapp_btn],
+        [InlineKeyboardButton(f"🎡 عجلة الحظ والإحالات ({spins} فرص)", callback_data="play_game")],
         [InlineKeyboardButton("💳 شحن البوت", callback_data="dep_menu"), InlineKeyboardButton("💰 سحب ارباحك", callback_data="with_menu")],
         [InlineKeyboardButton("🔄 شحن رصيد للموقع", callback_data="transfer_to_site"), InlineKeyboardButton("↩️ سحب رصيد من الموقع", callback_data="transfer_from_site")],
         [InlineKeyboardButton("🔑 إنشاء / تعديل حساب الموقع", callback_data="create_site_account"), InlineKeyboardButton("🔐 بيانات حسابي", callback_data="my_account")],
@@ -439,6 +447,80 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await show_main_menu(update, context)
         else:
             await update.effective_chat.send_message("❌ لم تشترك في كامل القنوات المطلوبة بعد.")
+
+    # --- لعبة عجلة الحظ والفرص ---
+    elif data == "play_game":
+        conn = get_db()
+        u = conn.execute("SELECT spins_count FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        conn.close()
+        spins = u['spins_count'] if u else 0
+
+        keyboard = [
+            [InlineKeyboardButton("🎰 تدوير العجلة الآن!", callback_data="spin_wheel_action")],
+            [InlineKeyboardButton("🔗 رابط إحالتي لكسب محاولات", callback_data="my_ref")],
+            [InlineKeyboardButton("↩️ القائمة الرئيسية", callback_data="main_menu")]
+        ]
+        
+        await update.effective_chat.send_message(
+            f"🎡 <b>لعبة عجلة الحظ الخاصة بالإحالات</b> 🎡\n"
+            f"──────────────────\n"
+            f"🎯 تكسب محاولة تدوير واحدة لكل شخص يقوم بالتسجيل من رابطك وإنشاء حساب بموقع الكازينو!\n\n"
+            f"🎟 فرصك الحالية: <b>{spins} محاولة</b>\n"
+            f"──────────────────",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML"
+        )
+
+    elif data == "spin_wheel_action":
+        conn = get_db()
+        cursor = conn.cursor()
+        u = cursor.execute("SELECT spins_count, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+
+        if not u or u['spins_count'] <= 0:
+            conn.close()
+            await update.effective_chat.send_message("❌ ليس لديك محاولات كافية! قم بدعوة أصدقائك وإنشاء حساباتهم للحصول على محاولات مجانية.")
+            return
+
+        # خصم محاولة
+        cursor.execute("UPDATE users SET spins_count = spins_count - 1 WHERE telegram_id = ?", (user_id,))
+        conn.commit()
+
+        win_rate = float(get_setting('game_win_rate', '30'))
+        min_p = float(get_setting('game_min_prize', '10'))
+        max_p = float(get_setting('game_max_prize', '100'))
+
+        # الخوارزمية
+        roll = random.uniform(0, 100)
+        cashier_bal = get_cashier_balance()
+
+        if roll <= win_rate and cashier_bal >= min_p:
+            prize = round(random.uniform(min_p, min(max_p, cashier_bal)), 2)
+            before_cashier, after_cashier = update_cashier(-prize)
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (prize, user_id))
+            conn.commit()
+
+            msg_win = (
+                f"🎉 <b>مبروك! لقد فزت في عجلة الحظ!</b> 🎉\n\n"
+                f"💎 الجائزة: <b>{prize:.2f} NSP</b>\n"
+                f"💰 تمت إضافة المبلغ مباشرة إلى رصيد بوتك."
+            )
+            await update.effective_chat.send_message(msg_win, parse_mode="HTML")
+
+            try:
+                await context.bot.send_message(
+                    MAIN_ADMIN_ID,
+                    f"🎰 <b>فوز في لعبة الإحالات:</b>\n"
+                    f"• العميل: <code>{user_id}</code>\n"
+                    f"• الجائزة: <b>{prize:.2f} NSP</b>\n"
+                    f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                    f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
+                    parse_mode="HTML"
+                )
+            except Exception: pass
+        else:
+            await update.effective_chat.send_message("💔 <b>للأسف! حظ أوفر في المرة القادمة.</b>\nدعُ أصدقاء أكثر لتزيد فرص فوزك!", parse_mode="HTML")
+
+        conn.close()
 
     elif data == "my_account":
         conn = get_db()
@@ -548,7 +630,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "my_ref":
         me = await context.bot.get_me()
-        await update.effective_chat.send_message(f"🔗 <b>رابط إحالتي الشخصي:</b>\n<code>https://t.me/{me.username}?start={user_id}</code>\n\n📢 سيصلك إشعار فوري عند دخول أي عميل جديد عبر رابطك!", parse_mode="HTML")
+        await update.effective_chat.send_message(f"🔗 <b>رابط إحالتي الشخصي:</b>\n<code>https://t.me/{me.username}?start={user_id}</code>\n\n📢 انشر رابطك! عند تسجّيل صديقك وإنشاء حسابه بالموقع، ستحصل فوراً على 🎡 <b>فرصة تدوير مجانية</b> في عجلة الحظ!", parse_mode="HTML")
 
     elif data == "claim_gift":
         context.user_data['state'] = 'WAIT_GIFT_CODE'
@@ -577,6 +659,38 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- لوحة التحكم الخاصة بالإدارة ---
     elif data == "admin_panel" and is_admin(user_id):
         await show_admin_panel(update, context)
+
+    elif data == "adm_game_settings" and is_admin(user_id):
+        wr = get_setting('game_win_rate', '30')
+        min_p = get_setting('game_min_prize', '10')
+        max_p = get_setting('game_max_prize', '100')
+        keyboard = [
+            [InlineKeyboardButton("🎯 تعديل نسبة الفوز %", callback_data="adm_set_win_rate")],
+            [InlineKeyboardButton("🔻 الحد الأدنى للجائزة", callback_data="adm_set_min_prize")],
+            [InlineKeyboardButton("🔺 الحد الأقصى للجائزة", callback_data="adm_set_max_prize")],
+            [InlineKeyboardButton("⚙️ لوحة الآدمن", callback_data="admin_panel")]
+        ]
+        await update.effective_chat.send_message(
+            f"🎮 <b>إعدادات خوارزمية لعبة الحظ:</b>\n\n"
+            f"• نسبة الفوز الحالية: <b>{wr}%</b>\n"
+            f"• أدنى جائزة عند الربح: <b>{min_p} NSP</b>\n"
+            f"• أقصى جائزة عند الربح: <b>{max_p} NSP</b>\n"
+            f"📌 الخصم يتم تلقائياً من الكاشيرة عند الربح.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML"
+        )
+
+    elif data == "adm_set_win_rate" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_WIN_RATE'
+        await update.effective_chat.send_message("🎯 أدخل نسبة الفوز الجديدة (من 1 إلى 100):")
+
+    elif data == "adm_set_min_prize" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_MIN_PRIZE'
+        await update.effective_chat.send_message("🔻 أدخل الحد الأدنى للجائزة بـ NSP:")
+
+    elif data == "adm_set_max_prize" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_MAX_PRIZE'
+        await update.effective_chat.send_message("🔺 أدخل الحد الأقصى للجائزة بـ NSP:")
 
     elif data == "adm_cashier" and is_admin(user_id):
         bal = get_cashier_balance()
@@ -644,7 +758,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-    # --- قبول / رفض الطلبات (مع تعديل الشحن يخصم من الكاشيرة والسحب يزيد للكاشيرة) ---
+    # --- قبول / رفض الطلبات ---
     elif data.startswith("app_req_") and is_admin(user_id):
         req_id = int(data.split("_")[2])
         conn = get_db()
@@ -655,7 +769,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_target = r['telegram_id']
             
             if 'deposit' in r['type']:
-                # عند الشحن: يُخصم من الكاشيرة ويُزاد للعميل
                 before_cashier, after_cashier = update_cashier(-amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET balance = balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amt, user_target))
@@ -672,7 +785,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
             elif 'withdraw' in r['type']:
-                # عند السحب: يُخصم من العميل (تم مسبقاً) ويُزاد للكاشيرة
                 before_cashier, after_cashier = update_cashier(amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET withdraw_count = withdraw_count + 1 WHERE telegram_id = ?", (user_target,))
@@ -789,6 +901,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bonus_state = "مفعل ✅" if get_setting('welcome_bonus_enabled', '1') == '1' else "معطل ❌"
     keyboard = [
         [InlineKeyboardButton("🏦 رصيد الكاشيرة", callback_data="adm_cashier"), InlineKeyboardButton("📥📤 طلبات الشحن والسحب", callback_data="adm_requests")],
+        [InlineKeyboardButton("🎮 إعدادات لعبة الحظ", callback_data="adm_game_settings")],
         [InlineKeyboardButton("💳 تعديل حسابات الدفع", callback_data="adm_pay_methods"), InlineKeyboardButton("💰 تعديل رصيد مستخدم", callback_data="adm_edit_user_bal")],
         [InlineKeyboardButton(f"🎁 حالة البونص ({bonus_state})", callback_data="adm_toggle_bonus_state"), InlineKeyboardButton("🎁 قيمة البونص الترحيبي", callback_data="adm_set_bonus")],
         [InlineKeyboardButton("📉 تعديل حدود الشحن والسحب", callback_data="adm_set_limits")],
@@ -830,7 +943,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- إنشاء حساب الموقع ---
+    # --- إنشاء حساب الموقع ومكافأة الإحالة ---
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
             await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 خانات على الأقل (أحرف إنجليزية وأرقام وبدون رموز). أعد الإدخال:")
@@ -846,12 +959,54 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         site_u = context.user_data.get('temp_site_user')
         try:
             cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (site_u, str(text), user_id))
+            
+            # فحص ومنح الداعي محاولة تدوير مجانية
+            u_info = cursor.execute("SELECT referred_by FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+            if u_info and u_info['referred_by']:
+                ref_id = u_info['referred_by']
+                cursor.execute("UPDATE users SET spins_count = spins_count + 1 WHERE telegram_id = ?", (ref_id,))
+                try:
+                    await context.bot.send_message(
+                        ref_id,
+                        f"🎉 <b>إشعار مكافأة الإحالة!</b>\n\nقم بزيارة عجلة الحظ الآن! أنشأ صديقك حسابه بنجاح وحصلت على 🎡 <b>فرصة تدوير جديدة</b>!",
+                        parse_mode="HTML"
+                    )
+                except Exception: pass
+
             conn.commit()
             context.user_data.clear()
             await update.message.reply_text(f"✅ <b>تم إنشاء وربط حساب الموقع بنجاح!</b>\n👤 اسم المستخدم: <code>{html.escape(site_u)}</code>\n🔑 كلمة المرور: <code>{html.escape(text)}</code>", parse_mode="HTML")
         except sqlite3.IntegrityError:
             await update.message.reply_text("❌ اسم المستخدم مأخوذ بالفعل في المنصة، أدخل اسم آخر:")
             context.user_data['state'] = 'WAIT_SITE_USER'
+
+    # --- خوارزمية لعبة الحظ في الإدارة ---
+    elif state == 'ADM_WAIT_WIN_RATE' and is_admin(user_id):
+        try:
+            val = float(text)
+            if 0 <= val <= 100:
+                set_setting('game_win_rate', str(val))
+                context.user_data.clear()
+                await update.message.reply_text(f"✅ تم تحديث نسبة الفوز إلى <b>{val}%</b>", parse_mode="HTML")
+            else:
+                await update.message.reply_text("أدخل نسبة مئوية بين 0 و 100.")
+        except ValueError: await update.message.reply_text("أدخل رقم صحيح.")
+
+    elif state == 'ADM_WAIT_MIN_PRIZE' and is_admin(user_id):
+        try:
+            val = float(text)
+            set_setting('game_min_prize', str(val))
+            context.user_data.clear()
+            await update.message.reply_text(f"✅ تم تحديث الحد الأدنى للجائزة إلى <b>{val} NSP</b>", parse_mode="HTML")
+        except ValueError: await update.message.reply_text("أدخل رقم صحيح.")
+
+    elif state == 'ADM_WAIT_MAX_PRIZE' and is_admin(user_id):
+        try:
+            val = float(text)
+            set_setting('game_max_prize', str(val))
+            context.user_data.clear()
+            await update.message.reply_text(f"✅ تم تحديث الحد الأقصى للجائزة إلى <b>{val} NSP</b>", parse_mode="HTML")
+        except ValueError: await update.message.reply_text("أدخل رقم صحيح.")
 
     # --- تحويل الرصيد من البوت إلى الموقع ---
     elif state == 'WAIT_TRANSFER_TO_SITE':
@@ -998,7 +1153,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ الكود غير صالح، معطل، أو انتهت استخداماته.")
         context.user_data.clear()
 
-    # --- مدخلات الآدمن ---
+    # --- مدخلات الآدمن وتوليد الأكواد ---
     elif state == 'ADM_WAIT_MIN_DEP' and is_admin(user_id):
         set_setting('min_deposit', text)
         context.user_data['state'] = 'ADM_WAIT_MIN_WITH'
@@ -1113,6 +1268,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🔑 كلمة المرور: <code>{html.escape(u['site_password'] or '')}</code>\n"
                 f"💰 رصيد البوت: <code>{u['balance']:.2f} NSP</code>\n"
                 f"💎 رصيد الموقع: <code>{u['site_balance']:.2f} NSP</code>\n"
+                f"🎡 محاولات عجلة الحظ: <code>{u['spins_count']}</code>\n"
                 f"🚫 حالة الحظر: {'محظور ❌' if u['is_banned'] else 'نشط ✅'}", 
                 parse_mode="HTML"
             )
