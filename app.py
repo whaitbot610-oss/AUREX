@@ -1,16 +1,19 @@
 import os
 import sqlite3
 import random
+import threading
+import subprocess
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = "aurex_casino_secret_key_2026_secure" # مفتاح حماية الجلسات
+app.secret_key = "aurex_casino_secret_key_2026_secure"
 
 DB_NAME = "database.db"
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
+    # إضافة timeout لتجنب إغلاق قاعدة البيانات عند الضغط
+    conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -44,8 +47,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
-            type TEXT, -- deposit / withdraw
-            method TEXT, -- Syriatel / Sham
+            type TEXT,
+            method TEXT,
             amount REAL,
             tx_number TEXT,
             status TEXT DEFAULT 'pending',
@@ -101,7 +104,7 @@ def init_db():
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
         
-    # --- إنشاء حساب الأدمن الافتراضي إذا لم يكن موجوداً ---
+    # --- إنشاء حساب الأدمن الافتراضي ---
     cursor.execute("SELECT * FROM users WHERE site_username = 'Admin'")
     if not cursor.fetchone():
         cursor.execute('''
@@ -116,7 +119,6 @@ init_db()
 
 # --- أدوات مساعدة ---
 def update_cashier_balance(cursor, amount_change):
-    """تعديل رصيد الخزينة (إيجابي = زيادة الكاشيرة، سلبي = الخصم من الكاشيرة)"""
     cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'")
     row = cursor.fetchone()
     current = float(row['value']) if row else 0.0
@@ -165,7 +167,6 @@ def login_site():
     if not user:
         return jsonify({'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
 
-    # حفظ المستخدم في الجلسة
     session['user_id'] = user['telegram_id']
     session['is_admin'] = bool(user['is_admin'])
 
@@ -210,7 +211,6 @@ def telegram_auth():
 
     session['user_id'] = user['telegram_id']
     session['is_admin'] = bool(user['is_admin'])
-
     conn.close()
 
     return jsonify({
@@ -253,11 +253,10 @@ def register_site():
         conn.close()
         return jsonify({'error': 'اسم المستخدم هذا مأخوذ بالفعل'}), 400
 
-# --- API مطالبة بالبونص الترحيبي (يخصم من الكاشيرة) ---
 @app.route('/api/claim_welcome_bonus', methods=['POST'])
 def claim_welcome_bonus():
     data = request.json or {}
-    telegram_id = data.get('telegram_id') or session.get('user_id')
+    telegram_id = session.get('user_id') or data.get('telegram_id')
 
     if not telegram_id:
         return jsonify({'error': 'يرجى تسجيل الدخول أولاً'}), 401
@@ -281,7 +280,6 @@ def claim_welcome_bonus():
         conn.close()
         return jsonify({'error': 'عذراً، رصيد الكاشيرة لا يكفي لإرسال البونص حالياً'}), 400
 
-    # الخصم من الكاشيرة وإضافتها للمستخدم
     update_cashier_balance(cursor, -bonus_amount)
     new_user_balance = user['balance'] + bonus_amount
 
@@ -296,11 +294,10 @@ def claim_welcome_bonus():
         'new_balance': new_user_balance
     })
 
-# --- API لعب السلوت متوافق مع الواجهة ---
 @app.route('/api/play', methods=['POST'])
 def play():
     data = request.json or {}
-    telegram_id = data.get('telegram_id') or session.get('user_id')
+    telegram_id = session.get('user_id') or data.get('telegram_id')
     bet_amount = float(data.get('bet_amount', 0))
     game_id = data.get('game_id', 'slot_default')
 
@@ -355,21 +352,22 @@ def play():
         'new_balance': user_balance
     })
 
-# --- APIs الإدارة الخاصة بالواجهة بونص/RTP/كاشير ---
+# --- APIs الإدارة (تم إصلاح الثغرة الأمنية باستعمال session حصراً) ---
 @app.route('/api/admin/transfer-cashier', methods=['POST'])
 def admin_transfer_cashier():
     user_id = session.get('user_id')
-    data = request.json or {}
-    telegram_id = data.get('telegram_id') or user_id
+    if not user_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
 
     if not user or not user['is_admin']:
         conn.close()
         return jsonify({'error': 'غير مصرح لك للقيام بهذه العملية'}), 403
 
+    data = request.json or {}
     amount = float(data.get('amount', 0))
     if amount <= 0:
         conn.close()
@@ -384,17 +382,18 @@ def admin_transfer_cashier():
 @app.route('/api/admin/set-rtp', methods=['POST'])
 def admin_set_rtp():
     user_id = session.get('user_id')
-    data = request.json or {}
-    telegram_id = data.get('telegram_id') or user_id
+    if not user_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    user = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
 
     if not user or not user['is_admin']:
         conn.close()
         return jsonify({'error': 'غير مصرح لك للقيام بهذه العملية'}), 403
 
+    data = request.json or {}
     rtp_rate = data.get('rtp_rate')
     if rtp_rate is None or not (0 <= float(rtp_rate) <= 100):
         conn.close()
@@ -409,6 +408,9 @@ def admin_set_rtp():
 @app.route('/api/admin/settings', methods=['GET', 'POST'])
 def admin_settings():
     user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -440,7 +442,7 @@ def admin_settings():
 @app.route('/api/transaction/request', methods=['POST'])
 def transaction_request():
     data = request.json or {}
-    telegram_id = data.get('telegram_id') or session.get('user_id')
+    telegram_id = session.get('user_id') or data.get('telegram_id')
     tx_type = data.get('type')
     method = data.get('method')
     amount = float(data.get('amount', 0))
@@ -473,7 +475,8 @@ def transaction_request():
 @app.route('/api/admin/transaction/action', methods=['POST'])
 def admin_transaction_action():
     user_id = session.get('user_id')
-    data = request.json or {}
+    if not user_id:
+        return jsonify({'error': 'يرجى تسجيل الدخول'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -483,6 +486,7 @@ def admin_transaction_action():
         conn.close()
         return jsonify({'error': 'غير مصرح لك'}), 403
 
+    data = request.json or {}
     tx_id = data.get('tx_id')
     action = data.get('action')
 
@@ -499,7 +503,8 @@ def admin_transaction_action():
         elif tx['type'] == 'withdraw':
             cursor.execute("UPDATE users SET balance = balance - ?, withdraw_count = withdraw_count + 1 WHERE telegram_id = ?",
                            (tx['amount'], tx['telegram_id']))
-            update_cashier_balance(cursor, tx['amount'])
+            # خصم المبلغ من الخزينة عند الموافقة على السحب
+            update_cashier_balance(cursor, -tx['amount'])
 
         cursor.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (tx_id,))
     else:
@@ -509,6 +514,16 @@ def admin_transaction_action():
     conn.close()
     return jsonify({'message': f'تمت معالجة الطلب بـ {action}'})
 
+# --- دالة تشغيل البوت في الخلفية عند بدء السيرفر ---
+def start_bot_process():
+    try:
+        subprocess.run(["python", "bot.py"])
+    except Exception as e:
+        print(f"Error starting bot process: {e}")
+
 if __name__ == '__main__':
+    # تشغيل البوت في خيط خلفي حتى لا يعطل سيرفر Flask
+    threading.Thread(target=start_bot_process, daemon=True).start()
+
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
