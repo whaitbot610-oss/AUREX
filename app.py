@@ -78,7 +78,7 @@ def init_db():
         )
     ''')
 
-    # 4. جدول أكواد الهدايا (إضافة حقل الحالة active)
+    # 4. جدول أكواد الهدايا
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gift_codes (
             code TEXT PRIMARY KEY,
@@ -122,7 +122,6 @@ def init_db():
         ('welcome_bonus', '500'),
         ('referral_bonus', '100'),
         ('global_cashier_balance', '10000.0'),
-        # نسب خوارزمية التحكم بالربح والخسارة داخل الموقع فقط
         ('algo_loss_rate', '50'),       # نسبة الخسارة 50%
         ('algo_normal_rate', '25'),     # نسبة الربح العادي 25%
         ('algo_medium_rate', '15'),     # نسبة الربح المتوسط 15%
@@ -197,7 +196,7 @@ def login_site():
     password = data.get('password', '').strip()
 
     if not username or not password:
-        return jsonify({'error': 'يرجى إدخال اسم المستخدم وكلمة المرور'}), 400
+        return jsonify({'error': 'يرجى إدخل اسم المستخدم وكلمة المرور'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -381,7 +380,6 @@ def claim_welcome_bonus():
     conn.commit()
     conn.close()
 
-    # إعادة التفاصيل لبناء نص إشعار خصم الكاشيرة بالكامل
     return jsonify({
         'status': 'success',
         'message': 'تم الحصول على البونص الترحيبي بنجاح',
@@ -420,7 +418,6 @@ def play():
     site_balance = user['site_balance'] - bet_amount
     total_spent = user['total_spent'] + bet_amount
 
-    # قراءة نسب الخوارزمية المنفصلة داخل الموقع
     p_loss = float(get_setting(cursor, 'algo_loss_rate', '50'))
     p_normal = float(get_setting(cursor, 'algo_normal_rate', '25'))
     p_med = float(get_setting(cursor, 'algo_medium_rate', '15'))
@@ -433,7 +430,6 @@ def play():
     multiplier = 0.0
     win_type = "loss"
 
-    # حساب نتيجة الخوارزمية بناءً على النسب
     if roll < p_loss:
         multiplier = 0.0
         win_type = "loss"
@@ -480,14 +476,16 @@ def play():
 @app.route('/api/admin/code/create', methods=['POST'])
 def create_code():
     user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor()
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
     
-    if user_id:
-        admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-        if not admin or not admin['is_admin']:
-            conn.close()
-            return jsonify({'error': 'غير مصرح'}), 403
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح لك بإجراء هذه العملية'}), 403
 
     data = request.json or {}
     code = data.get('code', '').strip()
@@ -517,11 +515,20 @@ def list_active_codes():
 
 @app.route('/api/admin/code/cancel', methods=['POST'])
 def cancel_code():
-    data = request.json or {}
-    code = data.get('code', '').strip()
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
+    data = request.json or {}
+    code = data.get('code', '').strip()
+
     cursor.execute("UPDATE gift_codes SET active = 0 WHERE code = ?", (code,))
     conn.commit()
     conn.close()
@@ -558,7 +565,6 @@ def use_code():
         conn.close()
         return jsonify({'error': 'لقد استخدمت هذا الكود من قبل'}), 400
 
-    # تطبيق الكود على رصيد البوت وتعديل سجل الاستخدام
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, code_text))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (code_text,))
     
@@ -568,7 +574,6 @@ def use_code():
     conn.commit()
     conn.close()
 
-    # إرسال بيانات المستخدم لإشعار من استخدم الكود
     return jsonify({
         'status': 'success',
         'message': f'تمت إضافة {code_obj["amount"]} إلى رصيدك بنجاح',
@@ -581,15 +586,25 @@ def use_code():
 # --- ربط عدّة بوتات وإضافة رصيد للكاشيرة لكل بوت من الإدارة ---
 @app.route('/api/admin/bots/add', methods=['POST'])
 def add_new_bot():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
     data = request.json or {}
     bot_name = data.get('bot_name', '').strip()
     bot_token = data.get('bot_token', '').strip()
 
     if not bot_name:
+        conn.close()
         return jsonify({'error': 'اسم البوت مطلوب'}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
     cursor.execute("INSERT INTO bots (bot_name, bot_token, cashier_balance) VALUES (?, ?, 0.0)", (bot_name, bot_token))
     bot_id = cursor.lastrowid
     conn.commit()
@@ -599,15 +614,25 @@ def add_new_bot():
 
 @app.route('/api/admin/bot/cashier_transfer', methods=['POST'])
 def admin_bot_cashier_transfer():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
     data = request.json or {}
     bot_id = int(data.get('bot_id', 1))
     amount = float(data.get('amount', 0))
 
     if amount <= 0:
+        conn.close()
         return jsonify({'error': 'المبلغ غير صالح'}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
     old_b, new_b = update_bot_cashier(cursor, amount, bot_id)
     conn.commit()
     conn.close()
@@ -620,7 +645,7 @@ def admin_bot_cashier_transfer():
         'message': f'تم إرسال {amount} إلى كاشيرة البوت رقم {bot_id}'
     })
 
-# --- الشحن والسحب بدقة (الشحن يخصم كاشيرة والعملية العكس للسحب) ---
+# --- الشحن والسحب بدقة (تجميد رصيد السحب فوراً لمنع التلاعب) ---
 @app.route('/api/transaction/request', methods=['POST'])
 def transaction_request():
     data = request.json or {}
@@ -637,14 +662,21 @@ def transaction_request():
     cursor = conn.cursor()
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
-    if tx_type == 'withdraw' and user['bot_balance'] < amount:
+    if not user:
         conn.close()
-        return jsonify({'error': 'رصيد البوت لا يكفي لطلب السحب'}), 400
+        return jsonify({'error': 'المستخدم غير موجود'}), 404
+
+    if tx_type == 'withdraw':
+        if user['bot_balance'] < amount:
+            conn.close()
+            return jsonify({'error': 'رصيد البوت لا يكفي لطلب السحب'}), 400
+        # خصم وتجميد الرصيد فوراً
+        cursor.execute("UPDATE users SET bot_balance = bot_balance - ? WHERE telegram_id = ?", (amount, telegram_id))
 
     cursor.execute('''
         INSERT INTO transactions (telegram_id, bot_id, type, method, amount, tx_number)
         VALUES (?, ?, ?, ?, ?, ?)
-    ''', (telegram_id, user['bot_id'] if user else 1, tx_type, method, amount, tx_number))
+    ''', (telegram_id, user['bot_id'] if user['bot_id'] else 1, tx_type, method, amount, tx_number))
     
     conn.commit()
     conn.close()
@@ -652,12 +684,21 @@ def transaction_request():
 
 @app.route('/api/admin/transaction/action', methods=['POST'])
 def admin_transaction_action():
-    data = request.json or {}
-    tx_id = data.get('tx_id')
-    action = data.get('action')
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
+    data = request.json or {}
+    tx_id = data.get('tx_id')
+    action = data.get('action')
 
     tx = cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
     if not tx or tx['status'] != 'pending':
@@ -673,13 +714,15 @@ def admin_transaction_action():
             cursor.execute("UPDATE users SET bot_balance = bot_balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?",
                            (tx['amount'], tx['telegram_id']))
         elif tx['type'] == 'withdraw':
-            # عند سحب العميل: يخصم من العميل ويزيد للكاشيرة
-            cursor.execute("UPDATE users SET bot_balance = bot_balance - ?, withdraw_count = withdraw_count + 1 WHERE telegram_id = ?",
-                           (tx['amount'], tx['telegram_id']))
+            # عند السحب: الرصيد مخصوم مسبقاً، تزداد الكاشيرة ويزيد عداد السحب
+            cursor.execute("UPDATE users SET withdraw_count = withdraw_count + 1 WHERE telegram_id = ?", (tx['telegram_id'],))
             update_bot_cashier(cursor, tx['amount'], bot_id)
 
         cursor.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (tx_id,))
     else:
+        # عند الرفض: إرجاع الرصيد المجمّد للمستخدم في حال كان السحب
+        if tx['type'] == 'withdraw':
+            cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ?", (tx['amount'], tx['telegram_id']))
         cursor.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (tx_id,))
 
     conn.commit()
@@ -689,10 +732,19 @@ def admin_transaction_action():
 # --- التحكم بنسب الخوارزمية من الإدارة ---
 @app.route('/api/admin/algorithm/settings', methods=['POST'])
 def set_algorithm_rates():
-    data = request.json or {}
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'غير مسجل الدخول'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    admin = cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not admin or not admin['is_admin']:
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
+    data = request.json or {}
     keys = ['algo_loss_rate', 'algo_normal_rate', 'algo_medium_rate', 'algo_high_rate', 'algo_huge_rate']
     for k in keys:
         if k in data:
