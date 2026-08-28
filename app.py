@@ -141,7 +141,7 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute('''
             INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, is_admin)
-            VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
         ''', (999999, 'Admin', 'Admin', 'Admin096', 0.0, 0.0))
 
     conn.commit()
