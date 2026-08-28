@@ -24,7 +24,7 @@ if not SERVER_URL.startswith("https://"):
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==========================================================
-# 2. إدارة قاعدة البيانات الموحدة (WAL Mode)
+# 2. إدارة قاعدة البيانات الموحدة (WAL Mode + Auto Migration)
 # ==========================================================
 def get_db():
     conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
@@ -57,6 +57,35 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
+
+    # --- ميزة التحديث التلقائي للأعمدة المفقودة (Auto Migration) ---
+    required_columns = {
+        'site_username': 'TEXT',
+        'site_password': 'TEXT',
+        'balance': 'REAL DEFAULT 0.0',
+        'total_spent': 'REAL DEFAULT 0.0',
+        'deposit_count': 'INTEGER DEFAULT 0',
+        'withdraw_count': 'INTEGER DEFAULT 0',
+        'referrals_count': 'INTEGER DEFAULT 0',
+        'referred_by': 'INTEGER',
+        'got_welcome_bonus': 'INTEGER DEFAULT 0',
+        'security_passed': 'INTEGER DEFAULT 0',
+        'is_admin': 'INTEGER DEFAULT 0',
+        'is_banned': 'INTEGER DEFAULT 0',
+        'code_restricted_until': 'TIMESTAMP',
+        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+    }
+    
+    cursor.execute("PRAGMA table_info(users)")
+    existing_cols = [col['name'] for col in cursor.fetchall()]
+    
+    for col_name, col_type in required_columns.items():
+        if col_name not in existing_cols:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+            except Exception as e:
+                logging.error(f"Error adding column {col_name}: {e}")
     
     # جدول المعاملات المالية
     cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
@@ -105,7 +134,7 @@ def init_db():
         ('win_rate', '30'),
         ('maintenance', '0'),
         ('welcome_bonus', '500'),
-        ('welcome_bonus_enabled', '1'), # 1 = مفعل، 0 = معطل
+        ('welcome_bonus_enabled', '1'),
         ('min_deposit', '50'),
         ('min_withdraw', '100'),
         ('cashier_balance', '10000.0'),
@@ -166,11 +195,9 @@ def get_payment_number(method_name):
 # 3. التحقق ودوال الأمان (شروط الحساب الجديدة)
 # ==========================================================
 def validate_username(username): 
-    # اسم مستخدم 6 حروف أو أرقام على الأقل بدون رموز خاصة
     return len(username) >= 6 and bool(re.match(r'^[a-zA-Z0-9_]+$', username))
 
 def validate_password(password): 
-    # 6 خانات على الأقل وتحتوي إجبارياً على أحرف وأرقام
     return (len(password) >= 6 and 
             bool(re.search(r'[a-zA-Z]', password)) and 
             bool(re.search(r'\d', password)))
@@ -198,7 +225,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor = conn.cursor()
 
     db_user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user.id,)).fetchone()
-    if db_user and db_user['is_banned']:
+    
+    # فحص آمن للحظر لتفادي خطأ المفتاح
+    if db_user and ('is_banned' in db_user.keys()) and db_user['is_banned']:
         conn.close()
         await update.message.reply_text("🚫 حسابك محظور من استخدام البوت.")
         return
@@ -309,13 +338,11 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- اختبار الأمان وتطبيق البونص حسب الحالة ---
     if data == "sec_correct":
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         bonus_enabled = get_setting('welcome_bonus_enabled', '1') == '1'
         bonus_amt = float(get_setting('welcome_bonus', '500.0'))
         
-        # إذا كان البونص مفعل والمستخدم لم يحصل عليه سابقاً
         if bonus_enabled and bonus_amt > 0 and user and user['got_welcome_bonus'] == 0:
             before_cashier, after_cashier = update_cashier(-bonus_amt)
             cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = 1, balance = balance + ? WHERE telegram_id = ?", (bonus_amt, user_id))
@@ -323,7 +350,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             await query.message.edit_text(f"كفو عليك! 🍯\n🎉 **تم توثيق حسابك بنجاح وحصلت على بونص ترحيبي بقيمة {bonus_amt:.2f} NSP!**", parse_mode="Markdown")
         else:
-            # البونص معطل أو تم الحصول عليه سابقاً: لا يتم عرض أي رسالة عن البونص إطلاقاً
             cursor.execute("UPDATE users SET security_passed = 1 WHERE telegram_id = ?", (user_id,))
             conn.commit()
             conn.close()
@@ -370,7 +396,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # --- قائمة خيارات الشحن ---
     elif data == "dep_menu":
         conn = get_db()
         u = conn.execute("SELECT site_username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -402,7 +427,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # --- قائمة خيارات السحب ---
     elif data == "with_menu":
         conn = get_db()
         u = conn.execute("SELECT site_username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -460,9 +484,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             txt += f"• {l['type']} | الوسيلة: {l['method'] or 'عام'} | المبلغ: {l['amount']} NSP | الحالة: {l['status']}\n"
         await update.effective_chat.send_message(txt, parse_mode="Markdown")
 
-    # ==========================================================
-    # لوحة التحكم الخاصة بالآدمن والأزرار المضافة
-    # ==========================================================
     elif data == "admin_panel" and is_admin(user_id):
         await show_admin_panel(update, context)
 
@@ -692,7 +713,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = msg.text.strip() if msg.text else ""
     state = context.user_data.get('state')
 
-    # --- دعم الرد المباشر من الآدمن عبر Telegram Reply ---
     if is_admin(user_id) and msg.reply_to_message:
         replied_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
         match = re.search(r"🆔 العميل:\s*`?(\d+)`?", replied_text)
@@ -712,7 +732,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- إنشاء وحساب الموقع بالشروط الجديدة ---
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
             await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 خانات على الأقل (أحرف إنجليزية وأرقام وبدون رموز). أعد الإدخال:")
@@ -735,7 +754,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ اسم المستخدم مأخوذ بالفعل، أدخل اسم آخر:")
             context.user_data['state'] = 'WAIT_SITE_USER'
 
-    # --- شحن الرصيد مع تطبيق الحد الأدنى ---
     elif state == 'WAIT_DEP_AMT':
         try:
             amt = float(text)
@@ -768,7 +786,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # --- سحب الرصيد مع تطبيق الحد الأدنى ---
     elif state == 'WAIT_WITH_AMT':
         try:
             amt = float(text)
