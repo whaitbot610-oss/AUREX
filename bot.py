@@ -77,6 +77,7 @@ def init_db():
         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    # تنبيه: SQLite لا يقبل DEFAULT CURRENT_TIMESTAMP مع ALTER TABLE، لذلك تم تبسيط الأنواع للتوافق
     required_columns = {
         'site_username': 'TEXT',
         'site_password': 'TEXT',
@@ -91,8 +92,8 @@ def init_db():
         'is_admin': 'INTEGER DEFAULT 0',
         'is_banned': 'INTEGER DEFAULT 0',
         'code_restricted_until': 'TIMESTAMP',
-        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        'created_at': 'TIMESTAMP',
+        'last_active': 'TIMESTAMP'
     }
     
     cursor.execute("PRAGMA table_info(users)")
