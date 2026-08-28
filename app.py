@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import random
+import string
 import threading
 import subprocess
 from datetime import datetime
@@ -9,7 +10,22 @@ from flask import Flask, request, jsonify, render_template, session
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = "aurex_casino_secret_key_2026_secure"
 
+# إعدادات الجلسات لضمان التوافق مع المتصفحات الخارجية
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
+
 DB_NAME = "database.db"
+
+# --- حل مشكلة CORS والاتصال بدون مكتبات خارجية ---
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    return response
 
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=10)
@@ -175,6 +191,9 @@ def get_setting(cursor, key, default="0"):
 
 @app.before_request
 def check_maintenance():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     if request.path.startswith('/api/') and not request.path.startswith('/api/admin') and not request.path.startswith('/api/auth'):
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -196,7 +215,7 @@ def login_site():
     password = data.get('password', '').strip()
 
     if not username or not password:
-        return jsonify({'error': 'يرجى إدخل اسم المستخدم وكلمة المرور'}), 400
+        return jsonify({'error': 'يرجى إدخال اسم المستخدم وكلمة المرور'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -472,10 +491,12 @@ def play():
         'new_site_balance': site_balance
     })
 
-# --- الأكواد وإصلاح الاستجابة للوحة البوت والإدارة ---
+# --- الأكواد وتوليدها والخصم المباشر من الكاشيرة ---
 @app.route('/api/admin/code/create', methods=['POST'])
 def create_code():
-    user_id = session.get('user_id')
+    data = request.json or {}
+    user_id = session.get('user_id') or data.get('admin_id') or data.get('telegram_id')
+
     if not user_id:
         return jsonify({'error': 'غير مسجل الدخول'}), 401
 
@@ -487,21 +508,48 @@ def create_code():
         conn.close()
         return jsonify({'error': 'غير مصرح لك بإجراء هذه العملية'}), 403
 
-    data = request.json or {}
     code = data.get('code', '').strip()
     amount = float(data.get('amount', 0))
     max_uses = int(data.get('max_uses', 1))
+    bot_id = int(data.get('bot_id', 1))
 
-    if not code or amount <= 0 or max_uses <= 0:
+    if not code:
+        code = "AUREX-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    total_cost = amount * max_uses
+
+    if amount <= 0 or max_uses <= 0:
         conn.close()
         return jsonify({'error': 'يرجى إدخال بيانات كود صالحة'}), 400
 
+    current_cashier = get_bot_cashier(cursor, bot_id)
+
+    # الفحص المباشر لكاشيرة البوت
+    if current_cashier < total_cost:
+        conn.close()
+        return jsonify({'error': f'رصيد كاشيرة البوت لا يكفي لتوليد الكود! المتاح: {current_cashier} ، المطلوب: {total_cost}'}), 400
+
     try:
+        # إضافة الكود لجدول الأكواد
         cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, active) VALUES (?, ?, ?, 0, 1)",
                        (code, amount, max_uses))
+        
+        # خصم القيمة الإجمالية للكود فوراً من كاشيرة البوت
+        old_cashier, new_cashier = update_bot_cashier(cursor, -total_cost, bot_id)
+
         conn.commit()
         conn.close()
-        return jsonify({'status': 'success', 'message': f'تم إنشاء الكود {code} بنجاح'})
+
+        return jsonify({
+            'status': 'success',
+            'code': code,
+            'amount': amount,
+            'max_uses': max_uses,
+            'total_deducted': total_cost,
+            'old_cashier': old_cashier,
+            'new_cashier': new_cashier,
+            'message': f'تم إنشاء الكود {code} وخصم {total_cost} من كاشيرة البوت بنجاح'
+        })
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({'error': 'الكود موجود سابقاً'}), 400
