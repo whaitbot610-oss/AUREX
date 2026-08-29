@@ -21,6 +21,11 @@ from telegram.ext import (
 # 0. خادم صحة الخدمة وواجهة API للموقع (Health & API Server)
 # ==========================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        # للرد على فحوصات Render الدورية التي تظهر في السجلات
+        self.send_response(200)
+        self.end_headers()
+
     def do_GET(self):
         if self.path == "/api/users":
             conn = get_db()
@@ -75,8 +80,8 @@ def start_health_check_server():
 # 1. الإعدادات الأساسية
 # ==========================================================
 MAIN_ADMIN_ID = 7255100997
-# تم إزالة التوكين الصريح لحماية البوت، يفضل وضعه في متغيرات البيئة (Environment Variables)
-BOT_TOKEN = os.environ.get("8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI", "").strip() 
+# تم تصحيح جلب التوكين هنا ليعمل مباشرة
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI").strip() 
 SERVER_URL = os.environ.get("SERVER_URL", "https://aurex-my-bot.onrender.com").strip()
 
 if not SERVER_URL.startswith("https://"):
@@ -112,12 +117,10 @@ async def register_account_to_site_api_async(username, password, telegram_id):
 def get_db():
     conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    # تم إزالة إعدادات PRAGMA من هنا لتجنب تنفيذها مع كل استعلام
     return conn
 
 def init_db():
     conn = get_db()
-    # وضع الإعدادات هنا لمرة واحدة فقط عند تشغيل البوت
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     
@@ -253,7 +256,6 @@ def is_admin(user_id):
     conn.close()
     return bool(row and row['is_admin'])
 
-# تم تعديلها لتحديث البيانات بشكل ذري (Atomic) لمنع أخطاء سباق البيانات
 def update_cashier(amount_change):
     conn = get_db()
     cursor = conn.cursor()
@@ -835,7 +837,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_target = r['telegram_id']
             
             if 'deposit' in r['type']:
-                # عند قبول شحن، تدخل الأموال للكاشيرة فتزداد الكاشيرة
                 before_cashier, after_cashier = update_cashier(amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET balance = balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amt, user_target))
@@ -853,7 +854,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.edit_text(msg_admin, parse_mode="HTML")
 
             elif 'withdraw' in r['type']:
-                # عند قبول سحب، تخرج الأموال من الكاشيرة فتخصم الكاشيرة
                 before_cashier, after_cashier = update_cashier(-amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET withdraw_count = withdraw_count + 1 WHERE telegram_id = ?", (user_target,))
@@ -1013,7 +1013,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- إنشاء حساب الموقع وتزامنه الفوري والدائم (باستخدام الدالة الغير متزامنة) ---
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
             await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 خانات على الأقل (أحرف إنجليزية وأرقام وبدون رموز). أعد الإدخال:")
@@ -1030,7 +1029,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (site_u, str(text), user_id))
             
-            # تنفيذ إرسال الـ API بشكل غير متزامن لتفادي تجميد البوت
             await register_account_to_site_api_async(site_u, str(text), user_id)
 
             u_info = cursor.execute("SELECT referred_by FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -1508,7 +1506,6 @@ def main():
 
     init_db()
 
-    # الآن البوت يعتمد بشكل صحيح على متغير البيئة للتوكين
     if not BOT_TOKEN:
         print("⚠️ خطأ حرج: متغير البيئة BOT_TOKEN مفقود! يرجى إضافته في إعدادات الاستضافة.")
         return
