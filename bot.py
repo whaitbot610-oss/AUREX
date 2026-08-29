@@ -22,7 +22,6 @@ from telegram.ext import (
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/users":
-            # واجهة لموقع الكازينو لاستعلام قائمة الحسابات والتحقق منها
             conn = get_db()
             users = conn.execute("SELECT telegram_id, site_username, site_password, site_balance FROM users WHERE site_username IS NOT NULL").fetchall()
             conn.close()
@@ -38,7 +37,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"OK - AUREX BOT IS RUNNING")
 
     def do_POST(self):
-        # استلام تحديثات الرصيد أو الحسابات من الموقع مباشرة
         if self.path == "/api/sync":
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -565,9 +563,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     MAIN_ADMIN_ID,
-                    f"🎰 <b>فوز في لعبة الإحالات:</b>\n"
+                    f"🎰 <b>خصم كاشيرة (فوز في عجلة الحظ):</b>\n"
                     f"• العميل: <code>{user_id}</code>\n"
-                    f"• الجائزة: <b>{prize:.2f} NSP</b>\n"
+                    f"• الجائزة المضافة: <b>{prize:.2f} NSP</b>\n"
                     f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
                     f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
                     parse_mode="HTML"
@@ -821,36 +819,40 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_target = r['telegram_id']
             
             if 'deposit' in r['type']:
-                before_cashier, after_cashier = update_cashier(-amt)
+                # عند قبول شحن، تدخل الأموال للكاشيرة فتزداد الكاشيرة
+                before_cashier, after_cashier = update_cashier(amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET balance = balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amt, user_target))
                 conn.commit()
                 
                 await context.bot.send_message(user_target, f"✅ <b>تم قبول طلب الشحن!</b>\nتم إضافة {amt:.2f} NSP إلى رصيد البوت الخاص بك بنجاح.", parse_mode="HTML")
-                await query.message.edit_text(
-                    f"✅ <b>تم قبول طلب شحن البوت!</b>\n"
+                
+                msg_admin = (
+                    f"✅ <b>تم قبول طلب شحن البوت وتحديث الكاشيرة!</b>\n"
                     f"• العميل: <code>{user_target}</code>\n"
-                    f"• المبلغ: {amt} NSP\n"
+                    f"• المبلغ المُضاف: <b>+{amt:.2f} NSP</b>\n"
                     f"🏦 <b>رصيد الكاشيرة قبل:</b> <code>{before_cashier:.2f} NSP</code>\n"
-                    f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>",
-                    parse_mode="HTML"
+                    f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>"
                 )
+                await query.message.edit_text(msg_admin, parse_mode="HTML")
 
             elif 'withdraw' in r['type']:
-                before_cashier, after_cashier = update_cashier(amt)
+                # عند قبول سحب، تخرج الأموال من الكاشيرة فتخصم الكاشيرة
+                before_cashier, after_cashier = update_cashier(-amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
                 conn.execute("UPDATE users SET withdraw_count = withdraw_count + 1 WHERE telegram_id = ?", (user_target,))
                 conn.commit()
 
                 await context.bot.send_message(user_target, f"✅ <b>تم قبول طلب السحب!</b>\nتم تحويل {amt:.2f} NSP بنجاح.", parse_mode="HTML")
-                await query.message.edit_text(
-                    f"✅ <b>تم قبول طلب السحب!</b>\n"
+                
+                msg_admin = (
+                    f"✅ <b>تم قبول طلب السحب وخصمه من الكاشيرة!</b>\n"
                     f"• العميل: <code>{user_target}</code>\n"
-                    f"• المبلغ: {amt} NSP\n"
+                    f"• المبلغ المخصوم: <b>-{amt:.2f} NSP</b>\n"
                     f"🏦 <b>رصيد الكاشيرة قبل:</b> <code>{before_cashier:.2f} NSP</code>\n"
-                    f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>",
-                    parse_mode="HTML"
+                    f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>"
                 )
+                await query.message.edit_text(msg_admin, parse_mode="HTML")
         conn.close()
 
     elif data.startswith("rej_req_") and is_admin(user_id):
@@ -1010,13 +1012,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         site_u = context.user_data.get('temp_site_user')
         try:
-            # 1. حفظ الحساب دائمًا بقاعدة البيانات
             cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (site_u, str(text), user_id))
-            
-            # 2. إرسال وتزامن الحساب فوراً إلى سيرفر الموقع عبر API
             register_account_to_site_api(site_u, str(text), user_id)
 
-            # 3. فحص ومنح الداعي محاولة تدوير مجانية
             u_info = cursor.execute("SELECT referred_by FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
@@ -1235,10 +1233,35 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = context.user_data.get('target_user')
         try:
             amt = float(text)
+            # تحديث الكاشيرة: إضافة رصيد للعميل تخصم من الكاشيرة، وخصمه يضيف للكاشيرة
+            before_cashier, after_cashier = update_cashier(-amt)
+            
             cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ? OR site_username = ?", (amt, target, target))
             conn.commit()
             context.user_data.clear()
-            await update.message.reply_text(f"✅ تم تعديل رصيد العميل <code>{target}</code> بـ {amt} NSP بنجاح.", parse_mode="HTML")
+            
+            await update.message.reply_text(
+                f"✅ <b>تم تعديل رصيد العميل بنجاح وتحديث الكاشيرة!</b>\n\n"
+                f"• المستهدف: <code>{html.escape(str(target))}</code>\n"
+                f"• قيمة التعديل: <b>{amt:+.2f} NSP</b>\n"
+                f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>", 
+                parse_mode="HTML"
+            )
+            
+            try:
+                if user_id != MAIN_ADMIN_ID:
+                    await context.bot.send_message(
+                        MAIN_ADMIN_ID,
+                        f"⚠️ <b>إشعار تعديل رصيد يدوي (تعديل كاشيرة):</b>\n\n"
+                        f"• الآدمن المنفذ: <code>{user_id}</code>\n"
+                        f"• المستهدف: <code>{html.escape(str(target))}</code>\n"
+                        f"• المبلغ: <b>{amt:+.2f} NSP</b>\n"
+                        f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                        f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
+                        parse_mode="HTML"
+                    )
+            except Exception: pass
         except ValueError: 
             await update.message.reply_text("أدخل مبلغ صحيح.")
 
@@ -1296,6 +1319,20 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📋 <b>الأكواد:</b>\n{codes_txt}", 
                 parse_mode="HTML"
             )
+            
+            try:
+                if user_id != MAIN_ADMIN_ID:
+                    await context.bot.send_message(
+                        MAIN_ADMIN_ID,
+                        f"🎁 <b>إشعار إنشاء أكواد هدية (خصم كاشيرة):</b>\n\n"
+                        f"• المنفذ: <code>{user_id}</code>\n"
+                        f"• المبلغ المخصوم: <b>{total_cost:.2f} NSP</b>\n"
+                        f"• التوليد: {count} أكواد بقيمة {amt} NSP لكل كود.\n"
+                        f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                        f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
+                        parse_mode="HTML"
+                    )
+            except Exception: pass
         except ValueError: 
             await update.message.reply_text("أدخل عدد صحيح.")
 
