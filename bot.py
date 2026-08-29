@@ -8,6 +8,7 @@ import html
 import threading
 import json
 import urllib.request
+import asyncio  # تمت إضافته لمعالجة الطلبات دون تجميد البوت
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -74,7 +75,8 @@ def start_health_check_server():
 # 1. الإعدادات الأساسية
 # ==========================================================
 MAIN_ADMIN_ID = 7255100997
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI").strip()
+# تم إزالة التوكين الصريح لحماية البوت، يفضل وضعه في متغيرات البيئة (Environment Variables)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip(*8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI*) 
 SERVER_URL = os.environ.get("SERVER_URL", "https://aurex-my-bot.onrender.com").strip()
 
 if not SERVER_URL.startswith("https://"):
@@ -83,36 +85,42 @@ if not SERVER_URL.startswith("https://"):
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ==========================================================
-# وظيفة إرسال وتأكيد الحساب فوراً إلى خادم الموقع
+# وظيفة إرسال وتأكيد الحساب (معدلة للعمل بشكل غير متزامن لتفادي التجميد)
 # ==========================================================
-def register_account_to_site_api(username, password, telegram_id):
-    try:
-        url = f"{SERVER_URL}/api/register"
-        payload = json.dumps({
-            "site_username": username,
-            "site_password": password,
-            "telegram_id": telegram_id
-        }).encode('utf-8')
-        
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            return resp.status == 200
-    except Exception as e:
-        logging.warning(f"Note: Site API HTTP trigger bypassed/failed ({e}), local DB synchronized.")
-        return False
+async def register_account_to_site_api_async(username, password, telegram_id):
+    def _send():
+        try:
+            url = f"{SERVER_URL}/api/register"
+            payload = json.dumps({
+                "site_username": username,
+                "site_password": password,
+                "telegram_id": telegram_id
+            }).encode('utf-8')
+            
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status == 200
+        except Exception as e:
+            logging.warning(f"Note: Site API HTTP trigger bypassed/failed ({e}), local DB synchronized.")
+            return False
+            
+    return await asyncio.to_thread(_send)
 
 # ==========================================================
-# 2. إدارة قاعدة البيانات (WAL Mode + Auto Migration)
+# 2. إدارة قاعدة البيانات
 # ==========================================================
 def get_db():
     conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    # تم إزالة إعدادات PRAGMA من هنا لتجنب تنفيذها مع كل استعلام
     return conn
 
 def init_db():
     conn = get_db()
+    # وضع الإعدادات هنا لمرة واحدة فقط عند تشغيل البوت
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    
     cursor = conn.cursor()
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -245,14 +253,22 @@ def is_admin(user_id):
     conn.close()
     return bool(row and row['is_admin'])
 
+# تم تعديلها لتحديث البيانات بشكل ذري (Atomic) لمنع أخطاء سباق البيانات
 def update_cashier(amount_change):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'")
-    row = cursor.fetchone()
-    before_balance = float(row['value']) if row else 0.0
-    after_balance = max(0.0, before_balance + amount_change)
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('cashier_balance', ?)", (str(after_balance),))
+    
+    row_before = cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'").fetchone()
+    before_balance = float(row_before['value']) if row_before else 0.0
+    
+    cursor.execute(
+        "UPDATE settings SET value = CAST(MAX(0.0, CAST(value AS REAL) + ?) AS TEXT) WHERE key = 'cashier_balance'", 
+        (amount_change,)
+    )
+    
+    row_after = cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'").fetchone()
+    after_balance = float(row_after['value']) if row_after else 0.0
+    
     conn.commit()
     conn.close()
     return before_balance, after_balance
@@ -997,7 +1013,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- إنشاء حساب الموقع وتزامنه الفوري والدائم ---
+    # --- إنشاء حساب الموقع وتزامنه الفوري والدائم (باستخدام الدالة الغير متزامنة) ---
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
             await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 خانات على الأقل (أحرف إنجليزية وأرقام وبدون رموز). أعد الإدخال:")
@@ -1013,7 +1029,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         site_u = context.user_data.get('temp_site_user')
         try:
             cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (site_u, str(text), user_id))
-            register_account_to_site_api(site_u, str(text), user_id)
+            
+            # تنفيذ إرسال الـ API بشكل غير متزامن لتفادي تجميد البوت
+            await register_account_to_site_api_async(site_u, str(text), user_id)
 
             u_info = cursor.execute("SELECT referred_by FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             if u_info and u_info['referred_by']:
@@ -1233,7 +1251,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = context.user_data.get('target_user')
         try:
             amt = float(text)
-            # تحديث الكاشيرة: إضافة رصيد للعميل تخصم من الكاشيرة، وخصمه يضيف للكاشيرة
             before_cashier, after_cashier = update_cashier(-amt)
             
             cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ? OR site_username = ?", (amt, target, target))
@@ -1490,6 +1507,11 @@ def main():
     threading.Thread(target=start_health_check_server, daemon=True).start()
 
     init_db()
+
+    # الآن البوت يعتمد بشكل صحيح على متغير البيئة للتوكين
+    if not BOT_TOKEN:
+        print("⚠️ خطأ حرج: متغير البيئة BOT_TOKEN مفقود! يرجى إضافته في إعدادات الاستضافة.")
+        return
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
