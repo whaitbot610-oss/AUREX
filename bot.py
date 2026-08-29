@@ -76,7 +76,7 @@ def start_health_check_server():
 # ==========================================================
 MAIN_ADMIN_ID = 7255100997
 # تم إزالة التوكين الصريح لحماية البوت، يفضل وضعه في متغيرات البيئة (Environment Variables)
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip(*8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI*) 
+BOT_TOKEN = os.environ.get("8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI", "").strip() 
 SERVER_URL = os.environ.get("SERVER_URL", "https://aurex-my-bot.onrender.com").strip()
 
 if not SERVER_URL.startswith("https://"):
