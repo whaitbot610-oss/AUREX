@@ -6,6 +6,8 @@ import random
 import string
 import html
 import threading
+import json
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -15,13 +17,52 @@ from telegram.ext import (
 )
 
 # ==========================================================
-# 0. خادم صحة الخدمة لبيئة Render (Health Check Server)
+# 0. خادم صحة الخدمة وواجهة API للموقع (Health & API Server)
 # ==========================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
+        if self.path == "/api/users":
+            # واجهة لموقع الكازينو لاستعلام قائمة الحسابات والتحقق منها
+            conn = get_db()
+            users = conn.execute("SELECT telegram_id, site_username, site_password, site_balance FROM users WHERE site_username IS NOT NULL").fetchall()
+            conn.close()
+            
+            data = [dict(u) for u in users]
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode('utf-8'))
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK - AUREX BOT IS RUNNING")
+
+    def do_POST(self):
+        # استلام تحديثات الرصيد أو الحسابات من الموقع مباشرة
+        if self.path == "/api/sync":
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                site_username = data.get('site_username')
+                new_balance = data.get('site_balance')
+                
+                if site_username and new_balance is not None:
+                    conn = get_db()
+                    conn.execute("UPDATE users SET site_balance = ? WHERE site_username = ?", (float(new_balance), site_username))
+                    conn.commit()
+                    conn.close()
+                    
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
+                    return
+            except Exception as e:
+                logging.error(f"Error handling sync post: {e}")
+        
+        self.send_response(400)
         self.end_headers()
-        self.wfile.write(b"OK - AUREX BOT IS RUNNING")
 
     def log_message(self, format, *args):
         return
@@ -42,6 +83,25 @@ if not SERVER_URL.startswith("https://"):
     SERVER_URL = "https://" + SERVER_URL.replace("http://", "")
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# ==========================================================
+# وظيفة إرسال وتأكيد الحساب فوراً إلى خادم الموقع
+# ==========================================================
+def register_account_to_site_api(username, password, telegram_id):
+    try:
+        url = f"{SERVER_URL}/api/register"
+        payload = json.dumps({
+            "site_username": username,
+            "site_password": password,
+            "telegram_id": telegram_id
+        }).encode('utf-8')
+        
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception as e:
+        logging.warning(f"Note: Site API HTTP trigger bypassed/failed ({e}), local DB synchronized.")
+        return False
 
 # ==========================================================
 # 2. إدارة قاعدة البيانات (WAL Mode + Auto Migration)
@@ -154,9 +214,9 @@ def init_db():
         ('min_withdraw', '100'),
         ('cashier_balance', '10000.0'),
         ('forced_channels', ''),
-        ('game_win_rate', '30'),       # نسبة الفوز بالافتراضي 30%
-        ('game_min_prize', '10'),      # أدنى جائزة عند الربح
-        ('game_max_prize', '100')      # أقصى جائزة عند الربح
+        ('game_win_rate', '30'),
+        ('game_min_prize', '10'),
+        ('game_max_prize', '100')
     ]
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, str(val)))
@@ -375,7 +435,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- معالجة سؤال الحماية البونص ---
     if data == "sec_wrong":
         conn.close()
         keyboard = [
@@ -448,7 +507,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.effective_chat.send_message("❌ لم تشترك في كامل القنوات المطلوبة بعد.")
 
-    # --- لعبة عجلة الحظ والفرص ---
     elif data == "play_game":
         conn = get_db()
         u = conn.execute("SELECT spins_count FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -481,7 +539,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_chat.send_message("❌ ليس لديك محاولات كافية! قم بدعوة أصدقائك وإنشاء حساباتهم للحصول على محاولات مجانية.")
             return
 
-        # خصم محاولة
         cursor.execute("UPDATE users SET spins_count = spins_count - 1 WHERE telegram_id = ?", (user_id,))
         conn.commit()
 
@@ -489,7 +546,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         min_p = float(get_setting('game_min_prize', '10'))
         max_p = float(get_setting('game_max_prize', '100'))
 
-        # الخوارزمية
         roll = random.uniform(0, 100)
         cashier_bal = get_cashier_balance()
 
@@ -548,7 +604,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    # --- شحن وتداول الرصيد بين البوت والموقع ---
     elif data == "transfer_to_site":
         conn = get_db()
         u = conn.execute("SELECT site_username, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -581,7 +636,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    # --- شحن البوت وسحب الأرباح الخارجية ---
     elif data == "dep_menu":
         min_dep = get_setting('min_deposit', '50')
         keyboard = [
@@ -656,7 +710,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             txt += f"• {l['type']} | الوسيلة: {l['method'] or 'عام'} | المبلغ: {l['amount']} NSP | الحالة: {l['status']}\n"
         await update.effective_chat.send_message(txt, parse_mode="HTML")
 
-    # --- لوحة التحكم الخاصة بالإدارة ---
     elif data == "admin_panel" and is_admin(user_id):
         await show_admin_panel(update, context)
 
@@ -758,7 +811,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-    # --- قبول / رفض الطلبات ---
     elif data.startswith("app_req_") and is_admin(user_id):
         req_id = int(data.split("_")[2])
         conn = get_db()
@@ -943,7 +995,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
 
-    # --- إنشاء حساب الموقع ومكافأة الإحالة ---
+    # --- إنشاء حساب الموقع وتزامنه الفوري والدائم ---
     if state == 'WAIT_SITE_USER':
         if not validate_username(text):
             await update.message.reply_text("❌ اسم المستخدم يجب أن يكون 6 خانات على الأقل (أحرف إنجليزية وأرقام وبدون رموز). أعد الإدخال:")
@@ -958,9 +1010,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         site_u = context.user_data.get('temp_site_user')
         try:
+            # 1. حفظ الحساب دائمًا بقاعدة البيانات
             cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (site_u, str(text), user_id))
             
-            # فحص ومنح الداعي محاولة تدوير مجانية
+            # 2. إرسال وتزامن الحساب فوراً إلى سيرفر الموقع عبر API
+            register_account_to_site_api(site_u, str(text), user_id)
+
+            # 3. فحص ومنح الداعي محاولة تدوير مجانية
             u_info = cursor.execute("SELECT referred_by FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
@@ -975,12 +1031,11 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             conn.commit()
             context.user_data.clear()
-            await update.message.reply_text(f"✅ <b>تم إنشاء وربط حساب الموقع بنجاح!</b>\n👤 اسم المستخدم: <code>{html.escape(site_u)}</code>\n🔑 كلمة المرور: <code>{html.escape(text)}</code>", parse_mode="HTML")
+            await update.message.reply_text(f"✅ <b>تم إنشاء وربط حساب الموقع بنجاح واستمراره في السيرفر!</b>\n👤 اسم المستخدم: <code>{html.escape(site_u)}</code>\n🔑 كلمة المرور: <code>{html.escape(text)}</code>", parse_mode="HTML")
         except sqlite3.IntegrityError:
             await update.message.reply_text("❌ اسم المستخدم مأخوذ بالفعل في المنصة، أدخل اسم آخر:")
             context.user_data['state'] = 'WAIT_SITE_USER'
 
-    # --- خوارزمية لعبة الحظ في الإدارة ---
     elif state == 'ADM_WAIT_WIN_RATE' and is_admin(user_id):
         try:
             val = float(text)
@@ -1008,7 +1063,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ تم تحديث الحد الأقصى للجائزة إلى <b>{val} NSP</b>", parse_mode="HTML")
         except ValueError: await update.message.reply_text("أدخل رقم صحيح.")
 
-    # --- تحويل الرصيد من البوت إلى الموقع ---
     elif state == 'WAIT_TRANSFER_TO_SITE':
         try:
             amt = float(text)
@@ -1027,7 +1081,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ يرجى إدخال مبلغ رقمي صحيح.")
 
-    # --- تحويل الرصيد من الموقع إلى البوت ---
     elif state == 'WAIT_TRANSFER_FROM_SITE':
         try:
             amt = float(text)
@@ -1046,7 +1099,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ يرجى إدخال مبلغ رقمي صحيح.")
 
-    # --- طلبات الشحن والسحب الخارجية ---
     elif state == 'WAIT_DEP_AMT':
         try:
             amt = float(text)
@@ -1119,7 +1171,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    # --- استخدام الكود وإشعار الإدارة فوراً ---
     elif state == 'WAIT_GIFT_CODE':
         code_input = text.strip()
         code_row = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND is_active = 1", (code_input,)).fetchone()
@@ -1153,7 +1204,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ الكود غير صالح، معطل، أو انتهت استخداماته.")
         context.user_data.clear()
 
-    # --- مدخلات الآدمن وتوليد الأكواد ---
     elif state == 'ADM_WAIT_MIN_DEP' and is_admin(user_id):
         set_setting('min_deposit', text)
         context.user_data['state'] = 'ADM_WAIT_MIN_WITH'
@@ -1400,13 +1450,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logging.error("Exception while handling an update:", exc_info=context.error)
 
 def main():
-    # 1. تشغيل سيرفر الصحة لـ Render
     threading.Thread(target=start_health_check_server, daemon=True).start()
 
-    # 2. تهيئة قاعدة البيانات
     init_db()
 
-    # 3. تشغيل تطبيق التلغرام
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel_command))
