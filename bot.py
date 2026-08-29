@@ -94,7 +94,6 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 ctx.arc(radius, radius, radius, angle, angle + sliceAngle);
                 ctx.closePath();
 
-                // أحمر وأسود تناوبي
                 ctx.fillStyle = (i % 2 === 0) ? "#141414" : "#e50914";
                 ctx.fill();
                 ctx.strokeStyle = "#d4af37";
@@ -148,7 +147,6 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 const targetIndex = data.prize_index;
                 const sliceAngle = (2 * Math.PI) / numSlices;
                 
-                // السهم في الأعلى (270 درجة = 1.5 * Math.PI)
                 const targetAngle = (1.5 * Math.PI) - (targetIndex * sliceAngle) - (sliceAngle / 2);
                 const extraRounds = 6 * 2 * Math.PI;
                 const startAngle = currentAngle;
@@ -438,11 +436,11 @@ def init_db():
         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
-    # تحديث تلقائي لقاعدة البيانات لإضافة الأعمدة المفقودة في حال وجود ملف database.db سابق
+    # تحديث سليم يتوافق مع قيود SQLite للأعمدة الجديدة
     existing_cols = [col[1] for col in cursor.execute("PRAGMA table_info(users)").fetchall()]
     required_cols = {
         'username': 'TEXT',
-        'site_username': 'TEXT UNIQUE',
+        'site_username': 'TEXT',
         'site_password': 'TEXT',
         'balance': 'REAL DEFAULT 0.0',
         'site_balance': 'REAL DEFAULT 0.0',
@@ -457,15 +455,15 @@ def init_db():
         'is_admin': 'INTEGER DEFAULT 0',
         'is_banned': 'INTEGER DEFAULT 0',
         'code_restricted_until': 'TIMESTAMP',
-        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        'created_at': 'TIMESTAMP',
+        'last_active': 'TIMESTAMP'
     }
     for col_name, col_type in required_cols.items():
         if col_name not in existing_cols:
             try:
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"Error adding column {col_name}: {e}")
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -1235,7 +1233,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         cursor.execute("UPDATE users SET site_username = ?, site_password = ? WHERE telegram_id = ?", (username, password, user_id))
         
-        # منح محاولة لفة مجانية للداعي فور إنشاء الحساب
         if u_info and u_info['referred_by']:
             ref_id = u_info['referred_by']
             cursor.execute("UPDATE users SET spins_count = spins_count + 1 WHERE telegram_id = ?", (ref_id,))
@@ -1479,7 +1476,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu(update, context)
         return
 
-    # --- حالات الآدمن ---
     elif is_admin(user_id):
         if state == 'ADM_WAIT_WIN_RATE':
             try:
@@ -1768,7 +1764,6 @@ def main():
     global bot_app
     init_db()
     
-    # تشغيل خادم صحة الخدمة وويب عجلة الحظ في خلفية مسار مستقل
     t = threading.Thread(target=start_health_check_server, daemon=True)
     t.start()
     logging.info("Health check server and WebApp wheel server started successfully.")
