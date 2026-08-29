@@ -438,6 +438,35 @@ def init_db():
         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    # تحديث تلقائي لقاعدة البيانات لإضافة الأعمدة المفقودة في حال وجود ملف database.db سابق
+    existing_cols = [col[1] for col in cursor.execute("PRAGMA table_info(users)").fetchall()]
+    required_cols = {
+        'username': 'TEXT',
+        'site_username': 'TEXT UNIQUE',
+        'site_password': 'TEXT',
+        'balance': 'REAL DEFAULT 0.0',
+        'site_balance': 'REAL DEFAULT 0.0',
+        'total_spent': 'REAL DEFAULT 0.0',
+        'deposit_count': 'INTEGER DEFAULT 0',
+        'withdraw_count': 'INTEGER DEFAULT 0',
+        'referrals_count': 'INTEGER DEFAULT 0',
+        'spins_count': 'INTEGER DEFAULT 0',
+        'referred_by': 'INTEGER',
+        'got_welcome_bonus': 'INTEGER DEFAULT 0',
+        'security_passed': 'INTEGER DEFAULT 0',
+        'is_admin': 'INTEGER DEFAULT 0',
+        'is_banned': 'INTEGER DEFAULT 0',
+        'code_restricted_until': 'TIMESTAMP',
+        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+    }
+    for col_name, col_type in required_cols.items():
+        if col_name not in existing_cols:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass
+
     cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         telegram_id INTEGER, 
@@ -590,8 +619,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚨 <b>يجب عليك الاشتراك بجميع القنوات التالية أولاً لاستخدام البوت:</b>", reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
         return
 
-    ref_by = int(context.args[0]) if context.args and context.args[0].isdigit() and int(context.args[0]) != user.id else None
-    
+    ref_by = None
+    if context.args and len(context.args) > 0 and context.args[0].isdigit():
+        parsed_id = int(context.args[0])
+        if parsed_id != user.id:
+            ref_by = parsed_id
+
     if not db_user:
         is_main_admin = 1 if user.id == MAIN_ADMIN_ID else 0
         cursor.execute(
