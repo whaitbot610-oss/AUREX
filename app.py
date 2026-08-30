@@ -231,11 +231,6 @@ def get_bot_cashier(cursor, bot_id=1):
     return float(row['cashier_balance']) if row else 0.0
 
 def update_bot_cashier(cursor, amount_change, bot_id=1):
-    """
-    تحديث رصيد الكاشيرة:
-    - التغيير السلبي (ينقص الكاشيرة) عند: بونص، ربح عجلة، شحن للاعب، إنشاء كود.
-    - التغيير الإيجابي (يزيد الكاشيرة) عند: طلب سحب، خصم رصيد من لاعب.
-    """
     old_balance = get_bot_cashier(cursor, bot_id)
     new_balance = max(0.0, old_balance + amount_change)
     cursor.execute("UPDATE bots SET cashier_balance = ? WHERE id = ?", (new_balance, bot_id))
@@ -251,19 +246,30 @@ def set_setting(cursor, key, value):
 
 def get_authenticated_user_id():
     user_id = session.get('user_id')
-    if user_id:
-        return user_id
     
     data = get_req_data()
-    raw_tg = data.get('telegram_id')
+    raw_tg = data.get('telegram_id') or data.get('user_id') or request.args.get('telegram_id') or request.args.get('user_id')
+    
     if raw_tg:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (raw_tg,)).fetchone()
-        conn.close()
-        if user:
-            return user['telegram_id']
-    return None
+        try:
+            tg_id = int(raw_tg)
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (tg_id,)).fetchone()
+            if not user:
+                # إنشاء تلقائي للمستخدم إذا كان يفتح العجلة/الموقع عبر التلجرام لمنع خطأ "المستخدم غير موجود"
+                cursor.execute("""
+                    INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
+                    VALUES (?, ?, ?, ?, 0.0, 0.0)
+                """, (tg_id, f"user_{tg_id}", f"user_{tg_id}", f"pass_{tg_id}"))
+                conn.commit()
+            conn.close()
+            session['user_id'] = tg_id
+            return tg_id
+        except (ValueError, TypeError):
+            pass
+
+    return user_id
 
 @app.before_request
 def check_maintenance():
@@ -286,7 +292,6 @@ def home():
 def wheel_page():
     return render_template('wheel.html')
 
-# مسار لوحة الإدارة الداخلية في الموقع
 @app.route('/admin')
 def admin_dashboard():
     if not session.get('is_admin'):
@@ -453,7 +458,6 @@ def claim_welcome_bonus():
         conn.close()
         return jsonify({'error': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً'}), 400
 
-    # خصم من الكاشيرة وإضافة لرصيد الموقع للعميل
     update_bot_cashier(cursor, -bonus_amount, bot_id)
     cursor.execute("UPDATE users SET site_balance = site_balance + ?, got_welcome_bonus = 1 WHERE telegram_id = ?", (bonus_amount, telegram_id))
 
@@ -588,11 +592,11 @@ def play_slot_game():
 
     if win:
         new_balance = user['site_balance'] - bet + payout
-        update_bot_cashier(cursor, -(payout - bet), bot_id) # ربح اللاعب يخصم من الكاشيرة
+        update_bot_cashier(cursor, -(payout - bet), bot_id)
     else:
         payout = 0.0
         new_balance = user['site_balance'] - bet
-        update_bot_cashier(cursor, bet, bot_id) # خسارة اللاعب تزيد الكاشيرة
+        update_bot_cashier(cursor, bet, bot_id)
 
     cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
     conn.commit()
@@ -630,7 +634,7 @@ def wheel_spin():
             conn.close()
             return jsonify({'error': 'ليس لديك رصيد كافٍ في الموقع أو لفتات مجانية'}), 400
         cursor.execute("UPDATE users SET site_balance = site_balance - ? WHERE telegram_id = ?", (spin_cost, user_id))
-        update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1) # ثمن اللفة يزيد الكاشيرة
+        update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
@@ -646,7 +650,6 @@ def wheel_spin():
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
-    # حماية الكاشيرة من استنزاف الرصيد عند الجوائز الكبيرة
     if chosen_reward > cashier:
         chosen_reward = 0
 
@@ -654,7 +657,7 @@ def wheel_spin():
 
     if chosen_reward > 0:
         cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ?", (chosen_reward, user_id))
-        update_bot_cashier(cursor, -chosen_reward, bot_id) # ربح العجلة ينقص الكاشيرة
+        update_bot_cashier(cursor, -chosen_reward, bot_id)
 
     conn.commit()
     updated_user = cursor.execute("SELECT site_balance, free_spins FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -694,7 +697,6 @@ def create_code():
     cursor = conn.cursor()
     current_cashier = get_bot_cashier(cursor, bot_id)
 
-    # إنشاء الكود ينقص كاشيرة البوت
     if current_cashier < total_cost:
         conn.close()
         return jsonify({'error': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}'}), 400
@@ -750,7 +752,6 @@ def use_code():
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, code_text))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (code_text,))
     
-    # تحويل قيمة الكود لرصيد بوت المستخدم
     cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ?", (code_obj['amount'], telegram_id))
     
     conn.commit()
@@ -758,7 +759,6 @@ def use_code():
     user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
     conn.close()
 
-    # إرسال إشعار تلغرام للأدمن
     user_name_str = user_info['site_username'] or user_info['username'] or str(telegram_id)
     notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
                    f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
@@ -780,7 +780,6 @@ def use_code():
 
 # ==================== لوحة التحكم والطلب وإدارة الكاشيرة ====================
 
-# 1. جلب قائمة العملاء
 @app.route('/api/admin/users', methods=['GET'])
 def admin_get_users():
     conn = get_db_connection()
@@ -792,7 +791,6 @@ def admin_get_users():
     conn.close()
     return jsonify([dict(u) for u in users])
 
-# 2. تعديل رصيد العميل (إضافة تنقص الكاشيرة / خصم يزيد الكاشيرة)
 @app.route('/api/admin/user/update_balance', methods=['POST'])
 def admin_update_user_balance():
     data = get_req_data()
@@ -819,11 +817,9 @@ def admin_update_user_balance():
     col = "site_balance" if balance_type == 'site' else "bot_balance"
 
     if action == 'add':
-        # إضافة رصيد للاعب -> تنقص الكاشيرة
         cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ?", (amount, telegram_id))
         update_bot_cashier(cursor, -amount, bot_id)
     else:
-        # خصم رصيد من لاعب -> تزيد الكاشيرة
         cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ?", (amount, telegram_id))
         update_bot_cashier(cursor, +amount, bot_id)
 
@@ -832,7 +828,6 @@ def admin_update_user_balance():
 
     return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم تحديث الكاشيرة'})
 
-# 3. منح اللفات المجانية
 @app.route('/api/admin/spins/grant_user', methods=['POST'])
 def admin_grant_spins_user():
     data = get_req_data()
@@ -867,7 +862,6 @@ def admin_grant_spins_all():
     conn.close()
     return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية لجميع المستخدمين بنجاح'})
 
-# 4. إدارة رصيد الكاشيرة
 @app.route('/api/admin/cashier/add', methods=['POST'])
 def admin_add_cashier():
     data = get_req_data()
@@ -892,7 +886,6 @@ def admin_get_cashiers():
     conn.close()
     return jsonify([dict(b) for b in bots])
 
-# 5. إعدادات الخوارزميات والنسب
 @app.route('/api/admin/settings', methods=['GET', 'POST'])
 def admin_settings():
     conn = get_db_connection()
@@ -928,7 +921,6 @@ def admin_settings():
         'wheel_probabilities': json.loads(wheel_p) if wheel_p else {}
     })
 
-# 6. طلبات الإيداع والسحب ومعالجتها مع الكاشيرة
 @app.route('/api/transaction/request', methods=['POST'])
 def create_transaction_request():
     telegram_id = get_authenticated_user_id()
@@ -936,7 +928,7 @@ def create_transaction_request():
         return jsonify({'error': 'يجب تسجيل الدخول'}), 401
 
     data = get_req_data()
-    tx_type = data.get('type') # 'deposit' أو 'withdraw'
+    tx_type = data.get('type')
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
@@ -972,7 +964,7 @@ def process_transaction():
     data = get_req_data()
     try:
         tx_id = int(data.get('tx_id', 0))
-        action = data.get('action') # 'approve' أو 'reject'
+        action = data.get('action')
     except (ValueError, TypeError):
         return jsonify({'error': 'بيانات غير صالحة'}), 400
 
@@ -991,11 +983,9 @@ def process_transaction():
 
     if action == 'approve':
         if tx['type'] == 'deposit':
-            # طلب شحن مقبول -> إضافة للعميل وخصم من الكاشيرة
             cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ?", (tx['amount'], tx['telegram_id']))
             update_bot_cashier(cursor, -tx['amount'], bot_id)
         elif tx['type'] == 'withdraw':
-            # طلب سحب مقبول -> خصم من العميل وزيادة الكاشيرة
             cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ?", (tx['amount'], tx['telegram_id']))
             update_bot_cashier(cursor, +tx['amount'], bot_id)
 
@@ -1005,7 +995,6 @@ def process_transaction():
 
     return jsonify({'status': 'success', 'message': f'تمت معالجة الطلب بـ ({action}) بنجاح'})
 
-# --- تشغيل البوت تلقائياً ---
 def launch_bot():
     if os.environ.get("BOT_LAUNCHED") != "true":
         os.environ["BOT_LAUNCHED"] = "true"
