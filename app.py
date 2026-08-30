@@ -203,7 +203,7 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute('''
             INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
         ''', (999999, 'Admin', 'Admin', 'Admin096', 0.0, 0.0))
 
     conn.commit()
@@ -246,7 +246,6 @@ def set_setting(cursor, key, value):
 
 def get_authenticated_user_id():
     user_id = session.get('user_id')
-    
     data = get_req_data()
     raw_tg = data.get('telegram_id') or data.get('user_id') or request.args.get('telegram_id') or request.args.get('user_id')
     
@@ -257,7 +256,6 @@ def get_authenticated_user_id():
             cursor = conn.cursor()
             user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (tg_id,)).fetchone()
             if not user:
-                # إنشاء تلقائي للمستخدم إذا كان يفتح العجلة/الموقع عبر التلجرام لمنع خطأ "المستخدم غير موجود"
                 cursor.execute("""
                     INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
                     VALUES (?, ?, ?, ?, 0.0, 0.0)
@@ -269,7 +267,14 @@ def get_authenticated_user_id():
         except (ValueError, TypeError):
             pass
 
-    return user_id
+    if user_id:
+        conn = get_db_connection()
+        user = conn.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        conn.close()
+        if user:
+            return user_id
+
+    return None
 
 @app.before_request
 def check_maintenance():
@@ -551,7 +556,6 @@ def transfer_to_bot():
 
 # ==================== نظام الألعاب ====================
 
-# 1. لعبة الفواكه / السلوتس
 @app.route('/api/play', methods=['POST'])
 def play_slot_game():
     telegram_id = get_authenticated_user_id()
