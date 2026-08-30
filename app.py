@@ -6,12 +6,14 @@ import string
 import threading
 import subprocess
 import json
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = "aurex_casino_secret_key_2026_secure"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "aurex_casino_secret_key_2026_secure")
 
 # إعدادات الجلسات لضمان العمل المستقل والدخول الفوري
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -20,6 +22,28 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 30
 
 DB_NAME = "database.db"
+
+# --- دالة إرسال إشعار تلغرام إلى الأدمن عند استخدام الكود ---
+def send_telegram_admin_notify(message):
+    bot_token = os.environ.get("BOT_TOKEN")
+    admin_id = os.environ.get("MAIN_ADMIN_ID")
+    if not bot_token or not admin_id:
+        return
+    
+    def _send():
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = urllib.parse.urlencode({
+                "chat_id": admin_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload)
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            print(f"Failed to send admin notification: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
 
 # --- معالجة CORS والاتصال المستقل ---
 @app.after_request
@@ -117,7 +141,7 @@ def init_db():
         )
     ''')
 
-    # 4. جدول الأكواد
+    # 4. جدول الأكواد (الكروت/المكافآت)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gift_codes (
             code TEXT PRIMARY KEY,
@@ -129,11 +153,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    try:
-        cursor.execute("ALTER TABLE gift_codes ADD COLUMN bot_id INTEGER DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass
 
     # 5. سجل الأكواد المستخدمة
     cursor.execute('''
@@ -179,10 +198,6 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO bots (id, bot_name, cashier_balance) VALUES (1, 'AUREX Main Bot', 10000.0)")
 
-    cursor.execute("SELECT * FROM bots WHERE id = 2")
-    if not cursor.fetchone():
-        cursor.execute("INSERT INTO bots (id, bot_name, cashier_balance) VALUES (2, 'Secondary Bot', 10000.0)")
-
     cursor.execute("SELECT * FROM users WHERE site_username = 'Admin'")
     if not cursor.fetchone():
         cursor.execute('''
@@ -225,7 +240,7 @@ def get_setting(cursor, key, default="0"):
     return row['value'] if row else default
 
 def get_authenticated_user_id():
-    """التحقق من أن المستخدم مسجل الدخول ولا يمكنه اللعب بدون حساب"""
+    """منع اللعب بدون تسجيل الدخول بحساب العميل"""
     user_id = session.get('user_id')
     if user_id:
         return user_id
@@ -266,7 +281,7 @@ def ping():
 def wheel_page():
     return render_template('wheel.html')
 
-# --- توثيق وتسجيل الدخول ---
+# --- المصادقة وتسجيل الدخول ---
 @app.route('/api/auth/login', methods=['POST'])
 def login_site():
     data = get_req_data()
@@ -301,46 +316,6 @@ def login_site():
         'is_admin': bool(user['is_admin'])
     })
 
-@app.route('/api/auth/telegram_login', methods=['POST'])
-def telegram_login():
-    data = get_req_data()
-    raw_tg = str(data.get('telegram_id', '')).strip()
-    username = str(data.get('username', '')).strip()
-
-    if not raw_tg or not raw_tg.isdigit():
-        return jsonify({'error': 'معرف التليجرام غير صالح'}), 400
-
-    telegram_id = int(raw_tg)
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
-    if not user:
-        site_user = username or f"user_{telegram_id}"
-        cursor.execute('''
-            INSERT INTO users (telegram_id, username, site_username, site_password, bot_id)
-            VALUES (?, ?, ?, ?, 1)
-        ''', (telegram_id, username, site_user, "tg_auto_pass"))
-        conn.commit()
-        user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
-
-    conn.close()
-
-    session.permanent = True
-    session['user_id'] = user['telegram_id']
-    session['is_admin'] = bool(user['is_admin'])
-
-    return jsonify({
-        'status': 'success',
-        'telegram_id': user['telegram_id'],
-        'username': user['site_username'] or user['username'],
-        'bot_balance': user['bot_balance'],
-        'site_balance': user['site_balance'],
-        'free_spins': user['free_spins'],
-        'referrals_count': user['referrals_count'],
-        'is_admin': bool(user['is_admin'])
-    })
-
 @app.route('/api/auth/logout', methods=['POST'])
 def logout_site():
     session.clear()
@@ -359,6 +334,7 @@ def get_user_account():
         return jsonify({'error': 'الحساب غير موجود'}), 404
     return jsonify(dict(user))
 
+# --- إنشاء حساب جديد وتطبيق الإحالة الحقيقية ---
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
     data = get_req_data()
@@ -397,7 +373,7 @@ def register_site():
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (telegram_id, site_user, site_user, site_pass, bot_id, referred_by))
             
-            # معالجة الإحالة وتصليح اللفة المجانية القابلة للعب للمحيل
+            # احتساب الإحالة وإضافة لفة مجانية حقيقية للمحيل
             if referred_by:
                 try:
                     ref_id = int(referred_by)
@@ -431,7 +407,7 @@ def register_site():
         conn.close()
         return jsonify({'error': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 400
 
-# --- تحويل الرصيد بين البوت والموقع ---
+# --- تحويل الرصيد بين رصيد البوت ورصيد الموقع ---
 @app.route('/api/balance/transfer_to_site', methods=['POST'])
 def transfer_to_site():
     telegram_id = get_authenticated_user_id()
@@ -465,7 +441,7 @@ def transfer_to_site():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم نقل {amount} من رصيد البوت إلى رصيد الموقع بنجاح',
+        'message': f'تم شحن {amount} من رصيد البوت إلى رصيد الموقع بنجاح',
         'bot_balance': new_bot_bal,
         'site_balance': new_site_bal
     })
@@ -503,14 +479,14 @@ def transfer_to_bot():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم نقل {amount} من رصيد الموقع إلى رصيد البوت بنجاح',
+        'message': f'تم سحب {amount} من رصيد الموقع إلى رصيد البوت بنجاح',
         'bot_balance': new_bot_bal,
         'site_balance': new_site_bal
     })
 
-# ==================== الألعاب (لا توجد إمكانية للعب بدون تسجيل الدخول) ====================
+# ==================== الألعاب (لا يمكن اللعب إلا بوجود حساب) ====================
 
-# 1. لعبة الفواكه (Slot Machine)
+# 1. لعبة الفواكه
 @app.route('/api/play', methods=['POST'])
 def play_slot_game():
     telegram_id = get_authenticated_user_id()
@@ -530,11 +506,7 @@ def play_slot_game():
     cursor = conn.cursor()
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
-    if not user:
-        conn.close()
-        return jsonify({'error': 'المستخدم غير موجود'}), 404
-
-    if user['site_balance'] < bet:
+    if not user or user['site_balance'] < bet:
         conn.close()
         return jsonify({'error': 'رصيد الموقع غير كافٍ للرهان'}), 400
 
@@ -547,8 +519,7 @@ def play_slot_game():
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
-    multiplier = 2.0
-    payout = bet * multiplier
+    payout = bet * 2.0
 
     if win and (payout - bet) > cashier:
         win = False
@@ -573,131 +544,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. لعبة رمي العملة (Coin Flip)
-@app.route('/api/games/coinflip', methods=['POST'])
-def coin_flip_game():
-    telegram_id = get_authenticated_user_id()
-    if not telegram_id:
-        return jsonify({'error': 'عذراً، يجب عليك تسجيل الدخول بحسابك أولاً للعب'}), 401
-
-    data = get_req_data()
-    user_choice = str(data.get('choice', 'heads')).lower()
-    try:
-        bet = float(data.get('bet_amount', 0))
-    except (ValueError, TypeError):
-        bet = 0
-
-    if bet <= 0 or user_choice not in ['heads', 'tails']:
-        return jsonify({'error': 'بيانات الرهان غير صالحة'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
-
-    if not user or user['site_balance'] < bet:
-        conn.close()
-        return jsonify({'error': 'رصيد غير كافٍ'}), 400
-
-    try:
-        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
-    except Exception:
-        rtp_rate = 30.0
-
-    win = (random.uniform(0, 100)) <= rtp_rate
-    outcome = user_choice if win else ('tails' if user_choice == 'heads' else 'heads')
-    bot_id = user['bot_id'] or 1
-    cashier = get_bot_cashier(cursor, bot_id)
-
-    payout = bet * 1.95
-    if win and (payout - bet) > cashier:
-        win = False
-        outcome = 'tails' if user_choice == 'heads' else 'heads'
-        payout = 0.0
-
-    if win:
-        new_balance = user['site_balance'] - bet + payout
-        update_bot_cashier(cursor, -(payout - bet), bot_id)
-    else:
-        payout = 0.0
-        new_balance = user['site_balance'] - bet
-        update_bot_cashier(cursor, bet, bot_id)
-
-    cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        'status': 'success',
-        'outcome': outcome,
-        'win': win,
-        'payout': payout,
-        'new_balance': new_balance
-    })
-
-# 3. لعبة رمي النرد (Dice Roll)
-@app.route('/api/games/dice', methods=['POST'])
-def dice_game():
-    telegram_id = get_authenticated_user_id()
-    if not telegram_id:
-        return jsonify({'error': 'عذراً، يجب عليك تسجيل الدخول بحسابك أولاً للعب'}), 401
-
-    data = get_req_data()
-    try:
-        bet = float(data.get('bet_amount', 0))
-        prediction = int(data.get('prediction', 4))
-    except (ValueError, TypeError):
-        bet = 0
-        prediction = 0
-
-    if bet <= 0 or prediction < 1 or prediction > 6:
-        return jsonify({'error': 'بيانات التخمين والرهان غير صالحة'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
-
-    if not user or user['site_balance'] < bet:
-        conn.close()
-        return jsonify({'error': 'رصيد غير كافٍ'}), 400
-
-    try:
-        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
-    except Exception:
-        rtp_rate = 30.0
-
-    win = (random.uniform(0, 100)) <= rtp_rate
-    bot_id = user['bot_id'] or 1
-    cashier = get_bot_cashier(cursor, bot_id)
-
-    dice_result = prediction if win else random.choice([i for i in range(1, 7) if i != prediction])
-    payout = bet * 5.0
-
-    if win and (payout - bet) > cashier:
-        win = False
-        dice_result = random.choice([i for i in range(1, 7) if i != prediction])
-        payout = 0.0
-
-    if win:
-        new_balance = user['site_balance'] - bet + payout
-        update_bot_cashier(cursor, -(payout - bet), bot_id)
-    else:
-        payout = 0.0
-        new_balance = user['site_balance'] - bet
-        update_bot_cashier(cursor, bet, bot_id)
-
-    cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        'status': 'success',
-        'dice_result': dice_result,
-        'win': win,
-        'payout': payout,
-        'new_balance': new_balance
-    })
-
-# --- خوارزمية العجلة بالنسب المئوية ---
+# 2. عجلة الحظ
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -760,7 +607,7 @@ def wheel_spin():
         'free_spins_left': updated_user['free_spins']
     })
 
-# --- الأكواد وتخصيص الكاشيرة والإشعارات ---
+# --- الأكواد، الخصم من الكاشيرة، والإشعارات ---
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
     data = get_req_data()
@@ -809,45 +656,6 @@ def create_code():
         conn.close()
         return jsonify({'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
 
-@app.route('/api/code/active', methods=['GET'])
-def get_active_codes():
-    conn = get_db_connection()
-    codes = conn.execute("SELECT * FROM gift_codes WHERE active = 1 AND used_count < max_uses ORDER BY created_at DESC").fetchall()
-    conn.close()
-    return jsonify([dict(c) for c in codes])
-
-@app.route('/api/code/cancel', methods=['POST'])
-def cancel_code():
-    data = get_req_data()
-    code_text = str(data.get('code', '')).strip()
-
-    if not code_text:
-        return jsonify({'error': 'يرجى إدخال الكود لإلغائه'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND active = 1", (code_text,)).fetchone()
-
-    if not code_obj:
-        conn.close()
-        return jsonify({'error': 'الكود غير موجود أو غير نشط'}), 404
-
-    bot_id = code_obj['bot_id'] or 1
-    remaining_uses = code_obj['max_uses'] - code_obj['used_count']
-    refund_amount = remaining_uses * code_obj['amount']
-
-    cursor.execute("UPDATE gift_codes SET active = 0 WHERE code = ?", (code_text,))
-    if refund_amount > 0:
-        update_bot_cashier(cursor, refund_amount, bot_id)
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        'status': 'success',
-        'message': f'تم إلغاء الكود بنجاح وإعادة {refund_amount} إلى كاشيرة البوت'
-    })
-
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
     data = get_req_data()
@@ -878,7 +686,7 @@ def use_code():
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, code_text))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (code_text,))
     
-    # إضافة الرصيد إلى رصيد البوت للعميل
+    # إضافة القيمة إلى رصيد البوت الخاص بالعميل
     cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ?", (code_obj['amount'], telegram_id))
     
     conn.commit()
@@ -886,26 +694,27 @@ def use_code():
     user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
     conn.close()
 
+    # إرسال إشعار للأدمن عبر التلغرام بمن استخدم الكود
+    user_name_str = user_info['site_username'] or user_info['username'] or str(telegram_id)
+    notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
+                   f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
+                   f"🔑 الكود: <code>{code_text}</code>\n"
+                   f"💰 القيمة: {code_obj['amount']}$")
+    send_telegram_admin_notify(notify_text)
+
     return jsonify({
         'status': 'success',
         'message': f'تم استخدام الكود بنجاح وإضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك',
         'user': {
             'telegram_id': user_info['telegram_id'],
-            'username': user_info['site_username'] or user_info['username'],
+            'username': user_name_str,
             'new_bot_balance': user_info['bot_balance']
         },
         'code': code_text,
         'amount': code_obj['amount']
     })
 
-# --- لوحة الإدارة وتعديلات الكاشيرة واللفات المجانية ---
-@app.route('/api/admin/users', methods=['GET'])
-def admin_get_users():
-    conn = get_db_connection()
-    users = conn.execute("SELECT telegram_id, bot_id, username, site_username, site_password, bot_balance, site_balance, referrals_count, free_spins, is_admin FROM users").fetchall()
-    conn.close()
-    return jsonify([dict(u) for u in users])
-
+# --- لوحة الإدارة، تعديل رصيد العملاء واللفات المجانية ---
 @app.route('/api/admin/spins/grant_user', methods=['POST'])
 def admin_grant_spins_user():
     data = get_req_data()
@@ -940,38 +749,12 @@ def admin_grant_spins_all():
     conn.close()
     return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية لجميع المستخدمين بنجاح'})
 
-@app.route('/api/admin/wheel/get_probs', methods=['GET'])
-def get_wheel_probs():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
-    conn.close()
-    try:
-        probs = json.loads(probs_str)
-    except Exception:
-        probs = {}
-    return jsonify(probs)
-
-@app.route('/api/admin/wheel/update_probs', methods=['POST'])
-def update_wheel_probs():
-    data = get_req_data()
-    probs = data.get('probabilities')
-    if not probs or not isinstance(probs, dict):
-        return jsonify({'error': 'صيغة النسب المئوية غير صالحة'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('wheel_probabilities', ?)", (json.dumps(probs),))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success', 'message': 'تم تحديث نسب احتمالات العجلة بنجاح'})
-
 @app.route('/api/admin/user/update_balance', methods=['POST'])
 def admin_update_user_balance():
     data = get_req_data()
     telegram_id = data.get('telegram_id')
-    action = data.get('action') # 'add' or 'deduct'
-    balance_type = data.get('balance_type', 'site') # 'site' or 'bot'
+    action = data.get('action') # 'add' أو 'deduct'
+    balance_type = data.get('balance_type', 'site') # 'site' أو 'bot'
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
@@ -992,18 +775,18 @@ def admin_update_user_balance():
     col = "site_balance" if balance_type == 'site' else "bot_balance"
 
     if action == 'add':
-        # زيادة رصيد العميل يخصم تلقائياً من الكاشيرة
+        # زيادة رصيد العميل يخصم مباشرة من الكاشيرة
         cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ?", (amount, telegram_id))
         update_bot_cashier(cursor, -amount, bot_id)
     else:
-        # خصم رصيد العميل يعيد المبلغ تلقائياً للكاشيرة
+        # خصم رصيد العميل يعيد المبلغ للكاشيرة
         cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ?", (amount, telegram_id))
         update_bot_cashier(cursor, +amount, bot_id)
 
     conn.commit()
     conn.close()
 
-    return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم تعديل الكاشيرة تلقائياً'})
+    return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم ربطها بالكاشيرة تلقائياً'})
 
 @app.route('/api/admin/cashier/add', methods=['POST'])
 def admin_add_cashier():
@@ -1029,34 +812,7 @@ def admin_get_cashiers():
     conn.close()
     return jsonify([dict(b) for b in bots])
 
-@app.route('/api/admin/settings/update', methods=['POST'])
-def admin_update_settings():
-    data = get_req_data()
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    for k, v in data.items():
-        val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (str(k), val_str))
-
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success', 'message': 'تم تحديث الإعدادات بنجاح'})
-
-@app.route('/api/admin/settings/get', methods=['GET'])
-def admin_get_settings():
-    conn = get_db_connection()
-    rows = conn.execute("SELECT * FROM settings").fetchall()
-    conn.close()
-    res = {}
-    for r in rows:
-        try:
-            res[r['key']] = json.loads(r['value'])
-        except Exception:
-            res[r['key']] = r['value']
-    return jsonify(res)
-
-# --- دالة تشغيل البوت تلقائياً عند بدء الخادم ---
+# --- تشغيل البوت تلقائياً ---
 def launch_bot():
     if os.environ.get("BOT_LAUNCHED") != "true":
         os.environ["BOT_LAUNCHED"] = "true"
