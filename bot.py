@@ -287,12 +287,19 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 win_rate = float(get_setting('game_win_rate', '30'))
                 cashier_bal = get_cashier_balance()
                 
+                weights_raw = get_setting('wheel_weights', '')
+                try:
+                    w_dict = json.loads(weights_raw) if weights_raw else {}
+                except Exception:
+                    w_dict = {}
+
                 roll = random.uniform(0, 100)
                 prize = 0
                 possible_prizes = [v for v in WHEEL_VALUES if v > 0 and v <= cashier_bal]
                 
                 if roll <= win_rate and possible_prizes:
-                    prize = random.choice(possible_prizes)
+                    prize_weights = [float(w_dict.get(str(v), 10)) for v in possible_prizes]
+                    prize = random.choices(possible_prizes, weights=prize_weights, k=1)[0]
 
                 prize_index = WHEEL_VALUES.index(prize)
                 
@@ -527,7 +534,8 @@ def init_db():
         ('min_withdraw', '100'),
         ('cashier_balance', '10000.0'),
         ('forced_channels', ''),
-        ('game_win_rate', '30')
+        ('game_win_rate', '30'),
+        ('wheel_weights', '{"0": 50, "5": 20, "10": 12, "15": 8, "25": 5, "50": 3, "100": 1.5, "500": 0.4, "10000": 0.1}')
     ]
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, str(val)))
@@ -961,16 +969,49 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wr = get_setting('game_win_rate', '30')
         keyboard = [
             [InlineKeyboardButton("🎯 تعديل نسبة الفوز %", callback_data="adm_set_win_rate")],
+            [InlineKeyboardButton("📊 تعديل أوزان نسب الجوائز", callback_data="adm_slice_weights_menu")],
             [InlineKeyboardButton("⚙️ لوحة الآدمن", callback_data="admin_panel")]
         ]
         await update.effective_chat.send_message(
             f"🎮 <b>إعدادات خوارزمية عجلة الحظ:</b>\n\n"
-            f"• نسبة الفوز الحالية: <b>{wr}%</b>\n"
-            f"• قيم الجوائز الثابتة العجلة: 0, 5, 10, 15, 25, 50, 100, 500, 10000 NSP\n"
+            f"• نسبة الفوز العامة: <b>{wr}%</b>\n"
+            f"• قيم الجوائز الثابتة بالعجلة: 0, 5, 10, 15, 25, 50, 100, 500, 10000 NSP\n"
             f"📌 الخصم يتم تلقائياً وفورياً من الكاشيرة عند فوز العميل بأي قيمة.",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="HTML"
         )
+
+    elif data == "adm_slice_weights_menu" and is_admin(user_id):
+        weights_raw = get_setting('wheel_weights', '{}')
+        try:
+            w_dict = json.loads(weights_raw)
+        except Exception:
+            w_dict = {}
+        
+        txt = "📊 <b>أوزان ظهور الجوائز الحالية في عجلة الحظ:</b>\n\n"
+        btns = []
+        row = []
+        for v in WHEEL_VALUES:
+            w_val = w_dict.get(str(v), 10)
+            txt += f"• الجائزة <b>{v} NSP</b> 👈 الوزن النسبى: <code>{w_val}</code>\n"
+            row.append(InlineKeyboardButton(f"✏️ {v} NSP", callback_data=f"adm_sw_{v}"))
+            if len(row) == 3:
+                btns.append(row)
+                row = []
+        if row:
+            btns.append(row)
+        btns.append([InlineKeyboardButton("⚙️ إعدادات العجلة", callback_data="adm_game_settings")])
+        await update.effective_chat.send_message(txt, reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
+
+    elif data.startswith("adm_sw_") and is_admin(user_id):
+        val = data.replace("adm_sw_", "")
+        context.user_data['target_slice_val'] = val
+        context.user_data['state'] = 'ADM_WAIT_SLICE_WEIGHT_AMT'
+        await update.effective_chat.send_message(f"🎯 أدخل الوزن النسبي الجديد لـ <b>{val} NSP</b> (مثال: 10 أو 5.5):", parse_mode="HTML")
+
+    elif data == "adm_grant_spins" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_SPINS_USER_ID'
+        await update.effective_chat.send_message("👤 أدخل آيدي العميل أو اسم حساب الموقع لمنحه محاولات لعب مجانية:")
 
     elif data == "adm_set_win_rate" and is_admin(user_id):
         context.user_data['state'] = 'ADM_WAIT_WIN_RATE'
@@ -1186,7 +1227,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bonus_state = "مفعل ✅" if get_setting('welcome_bonus_enabled', '1') == '1' else "معطل ❌"
     keyboard = [
         [InlineKeyboardButton("🏦 رصيد الكاشيرة", callback_data="adm_cashier"), InlineKeyboardButton("📥📤 طلبات الشحن والسحب", callback_data="adm_requests")],
-        [InlineKeyboardButton("🎮 إعدادات لعبة الحظ", callback_data="adm_game_settings")],
+        [InlineKeyboardButton("🎮 إعدادات لعبة الحظ", callback_data="adm_game_settings"), InlineKeyboardButton("🎡 منح لفات لعميل", callback_data="adm_grant_spins")],
         [InlineKeyboardButton("💳 تعديل حسابات الدفع", callback_data="adm_pay_methods"), InlineKeyboardButton("💰 تعديل رصيد مستخدم", callback_data="adm_edit_user_bal")],
         [InlineKeyboardButton(f"🎁 حالة البونص ({bonus_state})", callback_data="adm_toggle_bonus_state"), InlineKeyboardButton("🎁 قيمة البونص الترحيبي", callback_data="adm_set_bonus")],
         [InlineKeyboardButton("📉 تعديل حدود الشحن والسحب", callback_data="adm_set_limits")],
@@ -1456,7 +1497,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         amt = float(code_obj['amount'])
-        before_cashier, after_cashier = update_cashier(-amt)
         
         cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, text))
         cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (text,))
@@ -1469,12 +1509,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await send_all_admins(
             context,
-            f"🎁 <b>استخدام كود هدية وخصم من الكاشيرة:</b>\n"
+            f"🎁 <b>استخدام كود هدية:</b>\n"
             f"• العميل: <code>{user_id}</code>\n"
             f"• الكود: <code>{text}</code>\n"
-            f"• القيمة: <b>{amt:.2f} NSP</b>\n"
-            f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
-            f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>"
+            f"• القيمة: <b>{amt:.2f} NSP</b>"
         )
         await show_main_menu(update, context)
         return
@@ -1499,9 +1537,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 rate = float(text)
                 if not (0 <= rate <= 100): raise ValueError
                 set_setting('game_win_rate', str(rate))
-                await update.message.reply_text(f"🎯 تم تعديل نسبة الفوز في عجلة الحظ إلى: <b>{rate}%</b>", parse_mode="HTML")
+                await update.message.reply_text(f"🎯 تم تعديل نسبة الفوز العامة في عجلة الحظ إلى: <b>{rate}%</b>", parse_mode="HTML")
             except ValueError:
                 await update.message.reply_text("❌ أدخل نسبة مئوية صحيحة من 0 إلى 100!")
+            context.user_data.clear()
+            conn.close()
+            return
+
+        elif state == 'ADM_WAIT_SLICE_WEIGHT_AMT':
+            try:
+                w_num = float(text)
+                if w_num < 0: raise ValueError
+                val = context.user_data.get('target_slice_val')
+                weights_raw = get_setting('wheel_weights', '{}')
+                try:
+                    w_dict = json.loads(weights_raw)
+                except Exception:
+                    w_dict = {}
+                w_dict[str(val)] = w_num
+                set_setting('wheel_weights', json.dumps(w_dict))
+                await update.message.reply_text(f"✅ تم تعديل وزن الجائزة <b>{val} NSP</b> إلى: <code>{w_num}</code>", parse_mode="HTML")
+            except ValueError:
+                await update.message.reply_text("❌ أدخل رقماً صحيحاً للوزن!")
+            context.user_data.clear()
+            conn.close()
+            return
+
+        elif state == 'ADM_WAIT_SPINS_USER_ID':
+            u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE telegram_id = ? OR site_username = ?", (text, text)).fetchone()
+            if not u:
+                await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
+                conn.close()
+                return
+            context.user_data['target_spins_user'] = u['telegram_id']
+            context.user_data['state'] = 'ADM_WAIT_SPINS_COUNT'
+            await update.message.reply_text(f"👤 العميل: <code>{u['telegram_id']}</code>\n🎡 اللفات الحالية: <b>{u['spins_count']}</b>\n\n✍️ أدخل عدد اللفات المراد إضافتها:", parse_mode="HTML")
+            conn.close()
+            return
+
+        elif state == 'ADM_WAIT_SPINS_COUNT':
+            try:
+                cnt = int(text)
+                if cnt <= 0: raise ValueError
+                t_user = context.user_data.get('target_spins_user')
+                cursor.execute("UPDATE users SET spins_count = spins_count + ? WHERE telegram_id = ?", (cnt, t_user))
+                conn.commit()
+                await update.message.reply_text(f"✅ تم إضافة <b>{cnt}</b> محاولة لعب للعميل <code>{t_user}</code> بنجاح.", parse_mode="HTML")
+                try:
+                    await context.bot.send_message(t_user, f"🎉 <b>تم منحك {cnt} محاولات لعب مجانية في عجلة الحظ من الإدارة!</b>", parse_mode="HTML")
+                except Exception: pass
+            except ValueError:
+                await update.message.reply_text("❌ أدخل عدداً صحيحاً أكبر من 0!")
             context.user_data.clear()
             conn.close()
             return
@@ -1522,9 +1608,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 amt = float(text)
                 t_user = context.user_data.get('target_adm_user')
+                before_cashier, after_cashier = update_cashier(-amt)
                 cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amt, t_user))
                 conn.commit()
-                await update.message.reply_text(f"✅ تم تعديل رصيد العميل <code>{t_user}</code> بمقدار {amt:.2f} NSP بنجاح.", parse_mode="HTML")
+                
+                await update.message.reply_text(
+                    f"✅ تم تعديل رصيد العميل <code>{t_user}</code> بمقدار {amt:.2f} NSP بنجاح.\n"
+                    f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                    f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
+                    parse_mode="HTML"
+                )
                 try:
                     await context.bot.send_message(t_user, f"🔔 تم تعديل رصيد بوتك بواسطة الإدارة بمقدار: <b>{amt:+.2f} NSP</b>", parse_mode="HTML")
                 except Exception: pass
@@ -1604,6 +1697,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amt = context.user_data.get('gift_amt')
                 count = context.user_data.get('gift_count')
                 
+                total_value = amt * count * uses
+                before_cashier, after_cashier = update_cashier(-total_value)
+
                 generated = []
                 for _ in range(count):
                     c_str = "GIFT-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -1611,7 +1707,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     generated.append(c_str)
                 conn.commit()
                 
-                txt = f"✅ <b>تم توليد {count} أكواد بنجاح!</b>\n\n"
+                txt = (
+                    f"✅ <b>تم توليد {count} أكواد بنجاح وخصم قيمتها من الكاشيرة!</b>\n\n"
+                    f"💰 القيمة المحجوزة الكلية: <b>{total_value:.2f} NSP</b>\n"
+                    f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                    f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>\n\n"
+                )
                 for code in generated:
                     txt += f"• <code>{code}</code> (القيمة: {amt} NSP | الاستخدامات: {uses})\n"
                 await update.message.reply_text(txt, parse_mode="HTML")
@@ -1622,11 +1723,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'ADM_WAIT_DISABLE_CODE':
-            cursor.execute("UPDATE gift_codes SET is_active = 0 WHERE code = ?", (text,))
-            conn.commit()
+            code_row = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND is_active = 1", (text,)).fetchone()
+            if code_row:
+                unused_uses = code_row['max_uses'] - code_row['used_count']
+                refund = unused_uses * float(code_row['amount'])
+                cursor.execute("UPDATE gift_codes SET is_active = 0 WHERE code = ?", (text,))
+                conn.commit()
+                
+                before_cashier, after_cashier = update_cashier(refund)
+                await update.message.reply_text(
+                    f"✅ تم تعطيل الكود <code>{text}</code> بنجاح.\n"
+                    f"💰 تم إرجاع المتبقي (<b>{refund:.2f} NSP</b>) للكاشيرة.\n"
+                    f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
+                    f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
+                    parse_mode="HTML"
+                )
+            else:
+                await update.message.reply_text("❌ الكود غير موجود أو معطل سابقاً!")
             conn.close()
             context.user_data.clear()
-            await update.message.reply_text(f"✅ تم تعطيل الكود <code>{text}</code> بنجاح.", parse_mode="HTML")
             return
 
         elif state == 'ADM_WAIT_CHANNELS':
