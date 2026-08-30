@@ -21,7 +21,8 @@ app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 30
 
-DB_NAME = "database.db"
+# توحيد مسار قاعدة البيانات لتفادي إنشائها في مسارات مختلفة على Render
+DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
 
 # --- دالة إرسال إشعار تلغرام إلى الأدمن ---
 def send_telegram_admin_notify(message):
@@ -245,7 +246,7 @@ def set_setting(cursor, key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 def get_authenticated_user_id():
-    """استخراج المعرّف تلقائياً من الجلسة أو الطلب مع إنشائه في قاعدة البيانات إن لم يوجد"""
+    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو بيانات التلجرام المشفّرة (initData)"""
     user_id = session.get('user_id')
     data = get_req_data()
     
@@ -257,6 +258,23 @@ def get_authenticated_user_id():
         request.args.get('user_id')
     )
     
+    # تفكيك وفك تشفير معرّف المستخدم من initData الخاص بـ Telegram WebApp
+    if not raw_tg:
+        init_data = (
+            request.headers.get('X-Telegram-Init-Data') or 
+            request.args.get('tgWebAppData') or 
+            request.args.get('initData') or 
+            data.get('initData')
+        )
+        if init_data:
+            try:
+                parsed = urllib.parse.parse_qs(init_data)
+                if 'user' in parsed:
+                    user_json = json.loads(parsed['user'][0])
+                    raw_tg = user_json.get('id')
+            except Exception:
+                pass
+
     if raw_tg:
         try:
             tg_id = int(raw_tg)
@@ -265,8 +283,8 @@ def get_authenticated_user_id():
             user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (tg_id,)).fetchone()
             if not user:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
-                    VALUES (?, ?, ?, ?, 0.0, 0.0)
+                    INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
+                    VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
                 """, (tg_id, f"user_{tg_id}", f"user_{tg_id}", f"pass_{tg_id}"))
                 conn.commit()
             conn.close()
@@ -339,11 +357,11 @@ def login_site():
         'status': 'success',
         'telegram_id': user['telegram_id'],
         'username': user['site_username'] or user['username'],
-        'bot_balance': user['bot_balance'],
-        'site_balance': user['site_balance'],
-        'free_spins': user['free_spins'],
-        'referrals_count': user['referrals_count'],
-        'got_welcome_bonus': user['got_welcome_bonus'],
+        'bot_balance': user['bot_balance'] or 0.0,
+        'site_balance': user['site_balance'] or 0.0,
+        'free_spins': user['free_spins'] or 0,
+        'referrals_count': user['referrals_count'] or 0,
+        'got_welcome_bonus': user['got_welcome_bonus'] or 0,
         'is_admin': bool(user['is_admin'])
     })
 
@@ -363,7 +381,12 @@ def get_user_account():
     conn.close()
     if not user:
         return jsonify({'error': 'الحساب غير موجود'}), 404
-    return jsonify(dict(user))
+        
+    res = dict(user)
+    res['free_spins'] = res['free_spins'] if res['free_spins'] is not None else 0
+    res['site_balance'] = res['site_balance'] if res['site_balance'] is not None else 0.0
+    res['bot_balance'] = res['bot_balance'] if res['bot_balance'] is not None else 0.0
+    return jsonify(res)
 
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
@@ -428,9 +451,9 @@ def register_site():
             'message': 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
             'telegram_id': user_data['telegram_id'],
             'site_username': user_data['site_username'],
-            'bot_balance': user_data['bot_balance'],
-            'site_balance': user_data['site_balance'],
-            'free_spins': user_data['free_spins']
+            'bot_balance': user_data['bot_balance'] or 0.0,
+            'site_balance': user_data['site_balance'] or 0.0,
+            'free_spins': user_data['free_spins'] or 0
         })
     except sqlite3.IntegrityError as e:
         conn.close()
@@ -505,12 +528,12 @@ def transfer_to_site():
     cursor = conn.cursor()
     user = cursor.execute("SELECT bot_balance, site_balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
-    if not user or user['bot_balance'] < amount:
+    if not user or (user['bot_balance'] or 0.0) < amount:
         conn.close()
         return jsonify({'error': 'رصيد البوت غير كافٍ للتحويل إلى الموقع'}), 400
 
-    new_bot_bal = user['bot_balance'] - amount
-    new_site_bal = user['site_balance'] + amount
+    new_bot_bal = (user['bot_balance'] or 0.0) - amount
+    new_site_bal = (user['site_balance'] or 0.0) + amount
 
     cursor.execute("UPDATE users SET bot_balance = ?, site_balance = ? WHERE telegram_id = ?",
                    (new_bot_bal, new_site_bal, telegram_id))
@@ -543,12 +566,12 @@ def transfer_to_bot():
     cursor = conn.cursor()
     user = cursor.execute("SELECT bot_balance, site_balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
-    if not user or user['site_balance'] < amount:
+    if not user or (user['site_balance'] or 0.0) < amount:
         conn.close()
         return jsonify({'error': 'رصيد الموقع غير كافٍ للسحب إلى البوت'}), 400
 
-    new_site_bal = user['site_balance'] - amount
-    new_bot_bal = user['bot_balance'] + amount
+    new_site_bal = (user['site_balance'] or 0.0) - amount
+    new_bot_bal = (user['bot_balance'] or 0.0) + amount
 
     cursor.execute("UPDATE users SET bot_balance = ?, site_balance = ? WHERE telegram_id = ?",
                    (new_site_bal, new_bot_bal, telegram_id))
@@ -583,7 +606,7 @@ def play_slot_game():
     cursor = conn.cursor()
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
-    if not user or user['site_balance'] < bet:
+    if not user or (user['site_balance'] or 0.0) < bet:
         conn.close()
         return jsonify({'error': 'رصيد الموقع غير كافٍ للرهان'}), 400
 
@@ -603,11 +626,11 @@ def play_slot_game():
         payout = 0.0
 
     if win:
-        new_balance = user['site_balance'] - bet + payout
+        new_balance = (user['site_balance'] or 0.0) - bet + payout
         update_bot_cashier(cursor, -(payout - bet), bot_id)
     else:
         payout = 0.0
-        new_balance = user['site_balance'] - bet
+        new_balance = (user['site_balance'] or 0.0) - bet
         update_bot_cashier(cursor, bet, bot_id)
 
     cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
@@ -621,7 +644,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. عجلة الحظ (تعمل بالكامل عبر ID دون الحاجة لإنشاء حساب مسبق)
+# 2. عجلة الحظ (تعمل بالكامل عبر ID مع التعامل الدقيق مع اللفات المجانية)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -634,22 +657,25 @@ def wheel_spin():
 
     if not user:
         cursor.execute("""
-            INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
-            VALUES (?, ?, ?, ?, 0.0, 0.0)
+            INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
+            VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
         """, (user_id, f"user_{user_id}", f"user_{user_id}", f"pass_{user_id}"))
         conn.commit()
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
 
+    current_free_spins = user['free_spins'] if user['free_spins'] is not None else 0
+    current_site_balance = user['site_balance'] if user['site_balance'] is not None else 0.0
+
     is_free_spin = False
-    if user['free_spins'] > 0:
+    if current_free_spins > 0:
         is_free_spin = True
-        cursor.execute("UPDATE users SET free_spins = free_spins - 1 WHERE telegram_id = ?", (user_id,))
+        cursor.execute("UPDATE users SET free_spins = MAX(0, free_spins - 1) WHERE telegram_id = ?", (user_id,))
     else:
         spin_cost = 10.0
-        if user['site_balance'] < spin_cost:
+        if current_site_balance < spin_cost:
             conn.close()
             return jsonify({'error': 'ليس لديك لفتات مجانية أو رصيد كافٍ لتدوير العجلة'}), 400
-        cursor.execute("UPDATE users SET site_balance = site_balance - ? WHERE telegram_id = ?", (spin_cost, user_id))
+        cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ?", (spin_cost, user_id))
         update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
@@ -684,8 +710,8 @@ def wheel_spin():
         'reward': chosen_reward,
         'message': msg,
         'is_free_spin': is_free_spin,
-        'new_site_balance': updated_user['site_balance'],
-        'free_spins_left': updated_user['free_spins']
+        'new_site_balance': updated_user['site_balance'] if updated_user['site_balance'] is not None else 0.0,
+        'free_spins_left': updated_user['free_spins'] if updated_user['free_spins'] is not None else 0
     })
 
 # ==================== الأكواد وإشعارات التلغرام ====================
@@ -979,7 +1005,7 @@ def create_transaction_request():
         conn.close()
         return jsonify({'error': 'المستخدم غير موجود'}), 404
 
-    if tx_type == 'withdraw' and user['site_balance'] < amount:
+    if tx_type == 'withdraw' and (user['site_balance'] or 0.0) < amount:
         conn.close()
         return jsonify({'error': 'رصيد الموقع غير كافٍ لطلب السحب'}), 400
 
