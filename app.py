@@ -80,7 +80,7 @@ def init_db():
         )
     ''')
 
-    columns = [
+    user_columns = [
         ("site_username", "TEXT UNIQUE"),
         ("site_password", "TEXT"),
         ("bot_balance", "REAL DEFAULT 0.0"),
@@ -96,7 +96,7 @@ def init_db():
         ("is_admin", "INTEGER DEFAULT 0")
     ]
 
-    for col_name, col_type in columns:
+    for col_name, col_type in user_columns:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
@@ -125,10 +125,16 @@ def init_db():
             max_uses INTEGER,
             used_count INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1,
+            bot_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
+    try:
+        cursor.execute("ALTER TABLE gift_codes ADD COLUMN bot_id INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
     # 5. سجل الأكواد المستخدمة
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS used_codes (
@@ -163,7 +169,7 @@ def init_db():
         ('maintenance', 'off'),
         ('welcome_bonus', '0'),
         ('referral_bonus', '0'),
-        ('rtp_rate', '30.0'),  # نسبة الفوز الافتراضية لللاعبين (30%)
+        ('rtp_rate', '30.0'),
         ('wheel_probabilities', json.dumps(default_wheel_probs))
     ]
     for key, val in defaults:
@@ -217,6 +223,23 @@ def get_setting(cursor, key, default="0"):
     cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
     row = cursor.fetchone()
     return row['value'] if row else default
+
+def get_authenticated_user_id():
+    """التحقق من أن المستخدم مسجل الدخول ولا يمكنه اللعب بدون حساب"""
+    user_id = session.get('user_id')
+    if user_id:
+        return user_id
+    
+    data = get_req_data()
+    raw_tg = data.get('telegram_id')
+    if raw_tg:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (raw_tg,)).fetchone()
+        conn.close()
+        if user:
+            return user['telegram_id']
+    return None
 
 @app.before_request
 def check_maintenance():
@@ -325,7 +348,7 @@ def logout_site():
 
 @app.route('/api/user/account', methods=['GET'])
 def get_user_account():
-    user_id = session.get('user_id') or request.args.get('telegram_id')
+    user_id = get_authenticated_user_id()
     if not user_id:
         return jsonify({'error': 'غير مسجل الدخول'}), 401
     
@@ -374,6 +397,7 @@ def register_site():
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (telegram_id, site_user, site_user, site_pass, bot_id, referred_by))
             
+            # معالجة الإحالة وتصليح اللفة المجانية القابلة للعب للمحيل
             if referred_by:
                 try:
                     ref_id = int(referred_by)
@@ -382,7 +406,7 @@ def register_site():
                         SET referrals_count = referrals_count + 1, free_spins = free_spins + 1 
                         WHERE telegram_id = ?
                     ''', (ref_id,))
-                except ValueError:
+                except (ValueError, TypeError):
                     pass
 
         conn.commit()
@@ -407,18 +431,21 @@ def register_site():
         conn.close()
         return jsonify({'error': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 400
 
-# --- تحويل الرصيد ---
+# --- تحويل الرصيد بين البوت والموقع ---
 @app.route('/api/balance/transfer_to_site', methods=['POST'])
 def transfer_to_site():
+    telegram_id = get_authenticated_user_id()
+    if not telegram_id:
+        return jsonify({'error': 'يجب تسجيل الدخول أولاً'}), 401
+
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
         amount = 0
 
-    if not telegram_id or amount <= 0:
-        return jsonify({'error': 'بيانات التحويل غير صالحة'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'مبلغ التحويل غير صالح'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -445,15 +472,18 @@ def transfer_to_site():
 
 @app.route('/api/balance/transfer_to_bot', methods=['POST'])
 def transfer_to_bot():
+    telegram_id = get_authenticated_user_id()
+    if not telegram_id:
+        return jsonify({'error': 'يجب تسجيل الدخول أولاً'}), 401
+
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
         amount = 0
 
-    if not telegram_id or amount <= 0:
-        return jsonify({'error': 'بيانات السحب غير صالحة'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'مبلغ السحب غير صالح'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -478,20 +508,23 @@ def transfer_to_bot():
         'site_balance': new_site_bal
     })
 
-# ==================== الألعاب (GAMES ENDPOINTS) ====================
+# ==================== الألعاب (لا توجد إمكانية للعب بدون تسجيل الدخول) ====================
 
 # 1. لعبة الفواكه (Slot Machine)
 @app.route('/api/play', methods=['POST'])
 def play_slot_game():
+    telegram_id = get_authenticated_user_id()
+    if not telegram_id:
+        return jsonify({'error': 'عذراً، يجب عليك تسجيل الدخول بحسابك أولاً للعب'}), 401
+
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
     try:
         bet = float(data.get('bet_amount', 0))
     except (ValueError, TypeError):
         bet = 0
 
-    if not telegram_id or bet <= 0:
-        return jsonify({'error': 'مبلغ الرهان أو بيانات المستخدم غير صالحة'}), 400
+    if bet <= 0:
+        return jsonify({'error': 'مبلغ الرهان غير صالح'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -517,7 +550,6 @@ def play_slot_game():
     multiplier = 2.0
     payout = bet * multiplier
 
-    # عدم السماح بالفوز إذا كانت كاشيرة البوت لا تغطي الجائزة
     if win and (payout - bet) > cashier:
         win = False
         payout = 0.0
@@ -541,18 +573,21 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. لعبة رمي العملة (Coin Flip 50/50)
+# 2. لعبة رمي العملة (Coin Flip)
 @app.route('/api/games/coinflip', methods=['POST'])
 def coin_flip_game():
+    telegram_id = get_authenticated_user_id()
+    if not telegram_id:
+        return jsonify({'error': 'عذراً، يجب عليك تسجيل الدخول بحسابك أولاً للعب'}), 401
+
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
-    user_choice = str(data.get('choice', 'heads')).lower() # heads or tails
+    user_choice = str(data.get('choice', 'heads')).lower()
     try:
         bet = float(data.get('bet_amount', 0))
     except (ValueError, TypeError):
         bet = 0
 
-    if not telegram_id or bet <= 0 or user_choice not in ['heads', 'tails']:
+    if bet <= 0 or user_choice not in ['heads', 'tails']:
         return jsonify({'error': 'بيانات الرهان غير صالحة'}), 400
 
     conn = get_db_connection()
@@ -602,16 +637,19 @@ def coin_flip_game():
 # 3. لعبة رمي النرد (Dice Roll)
 @app.route('/api/games/dice', methods=['POST'])
 def dice_game():
+    telegram_id = get_authenticated_user_id()
+    if not telegram_id:
+        return jsonify({'error': 'عذراً، يجب عليك تسجيل الدخول بحسابك أولاً للعب'}), 401
+
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
     try:
         bet = float(data.get('bet_amount', 0))
-        prediction = int(data.get('prediction', 4)) # التخمين (1-6)
+        prediction = int(data.get('prediction', 4))
     except (ValueError, TypeError):
         bet = 0
         prediction = 0
 
-    if not telegram_id or bet <= 0 or prediction < 1 or prediction > 6:
+    if bet <= 0 or prediction < 1 or prediction > 6:
         return jsonify({'error': 'بيانات التخمين والرهان غير صالحة'}), 400
 
     conn = get_db_connection()
@@ -662,10 +700,9 @@ def dice_game():
 # --- خوارزمية العجلة بالنسب المئوية ---
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
-    data = get_req_data()
-    user_id = session.get('user_id') or data.get('telegram_id')
+    user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'يجب تسجيل الدخول لتدوير العجلة'}), 401
+        return jsonify({'error': 'يجب عليك تسجيل الدخول بحسابك أولاً لتدوير العجلة'}), 401
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -683,7 +720,7 @@ def wheel_spin():
         spin_cost = 10.0
         if user['site_balance'] < spin_cost:
             conn.close()
-            return jsonify({'error': 'ليس لديك رصيد كافٍ أو لفتات مجانية'}), 400
+            return jsonify({'error': 'ليس لديك رصيد كافٍ في الموقع أو لفتات مجانية'}), 400
         cursor.execute("UPDATE users SET site_balance = site_balance - ? WHERE telegram_id = ?", (spin_cost, user_id))
         update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
@@ -723,7 +760,7 @@ def wheel_spin():
         'free_spins_left': updated_user['free_spins']
     })
 
-# --- الأكواد ---
+# --- الأكواد وتخصيص الكاشيرة والإشعارات ---
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
     data = get_req_data()
@@ -752,8 +789,8 @@ def create_code():
         return jsonify({'error': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}'}), 400
 
     try:
-        cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, active) VALUES (?, ?, ?, 0, 1)",
-                       (code, amount, max_uses))
+        cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, active, bot_id) VALUES (?, ?, ?, 0, 1, ?)",
+                       (code, amount, max_uses, bot_id))
         old_cashier, new_cashier = update_bot_cashier(cursor, -total_cost, bot_id)
 
         conn.commit()
@@ -783,7 +820,6 @@ def get_active_codes():
 def cancel_code():
     data = get_req_data()
     code_text = str(data.get('code', '')).strip()
-    bot_id = int(data.get('bot_id', 1))
 
     if not code_text:
         return jsonify({'error': 'يرجى إدخال الكود لإلغائه'}), 400
@@ -796,6 +832,7 @@ def cancel_code():
         conn.close()
         return jsonify({'error': 'الكود غير موجود أو غير نشط'}), 404
 
+    bot_id = code_obj['bot_id'] or 1
     remaining_uses = code_obj['max_uses'] - code_obj['used_count']
     refund_amount = remaining_uses * code_obj['amount']
 
@@ -814,11 +851,11 @@ def cancel_code():
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
     data = get_req_data()
-    telegram_id = session.get('user_id') or data.get('telegram_id')
+    telegram_id = get_authenticated_user_id() or data.get('telegram_id')
     code_text = str(data.get('code', '')).strip()
 
     if not telegram_id or not code_text:
-        return jsonify({'error': 'بيانات غير صالحة'}), 400
+        return jsonify({'error': 'بيانات استخدام الكود غير صالحة'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -840,14 +877,28 @@ def use_code():
 
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, code_text))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (code_text,))
+    
+    # إضافة الرصيد إلى رصيد البوت للعميل
     cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ?", (code_obj['amount'], telegram_id))
     
     conn.commit()
+    
+    user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
     conn.close()
 
-    return jsonify({'status': 'success', 'message': f'تمت إضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك بنجاح'})
+    return jsonify({
+        'status': 'success',
+        'message': f'تم استخدام الكود بنجاح وإضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك',
+        'user': {
+            'telegram_id': user_info['telegram_id'],
+            'username': user_info['site_username'] or user_info['username'],
+            'new_bot_balance': user_info['bot_balance']
+        },
+        'code': code_text,
+        'amount': code_obj['amount']
+    })
 
-# --- لوحة الإدارة ---
+# --- لوحة الإدارة وتعديلات الكاشيرة واللفات المجانية ---
 @app.route('/api/admin/users', methods=['GET'])
 def admin_get_users():
     conn = get_db_connection()
@@ -869,10 +920,10 @@ def admin_grant_spins_user():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET free_spins = free_spins + ? WHERE telegram_id = ? OR site_username = ?", (spins, target_user, target_user))
+    cursor.execute("UPDATE users SET free_spins = free_spins + ? WHERE telegram_id = ? OR LOWER(site_username) = LOWER(?)", (spins, target_user, str(target_user)))
     conn.commit()
     conn.close()
-    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة للمستخدم بنجاح'})
+    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية للمستخدم بنجاح'})
 
 @app.route('/api/admin/spins/grant_all', methods=['POST'])
 def admin_grant_spins_all():
@@ -887,7 +938,19 @@ def admin_grant_spins_all():
     cursor.execute("UPDATE users SET free_spins = free_spins + ?", (spins,))
     conn.commit()
     conn.close()
-    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة لجميع المستخدمين بنجاح'})
+    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية لجميع المستخدمين بنجاح'})
+
+@app.route('/api/admin/wheel/get_probs', methods=['GET'])
+def get_wheel_probs():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
+    conn.close()
+    try:
+        probs = json.loads(probs_str)
+    except Exception:
+        probs = {}
+    return jsonify(probs)
 
 @app.route('/api/admin/wheel/update_probs', methods=['POST'])
 def update_wheel_probs():
@@ -907,27 +970,40 @@ def update_wheel_probs():
 def admin_update_user_balance():
     data = get_req_data()
     telegram_id = data.get('telegram_id')
-    action = data.get('action')
-    balance_type = data.get('balance_type', 'site')
+    action = data.get('action') # 'add' or 'deduct'
+    balance_type = data.get('balance_type', 'site') # 'site' or 'bot'
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
         amount = 0
 
     if not telegram_id or amount <= 0 or action not in ['add', 'deduct']:
-        return jsonify({'error': 'بيانات غير صالحة'}), 400
+        return jsonify({'error': 'بيانات التعديل غير صالحة'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    col = "site_balance" if balance_type == 'site' else "bot_balance"
-    op = "+" if action == 'add' else "-"
+    user = cursor.execute("SELECT bot_id FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'المستخدم غير موجود'}), 404
 
-    cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} {op} ?) WHERE telegram_id = ?", (amount, telegram_id))
+    bot_id = user['bot_id'] or 1
+    col = "site_balance" if balance_type == 'site' else "bot_balance"
+
+    if action == 'add':
+        # زيادة رصيد العميل يخصم تلقائياً من الكاشيرة
+        cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ?", (amount, telegram_id))
+        update_bot_cashier(cursor, -amount, bot_id)
+    else:
+        # خصم رصيد العميل يعيد المبلغ تلقائياً للكاشيرة
+        cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ?", (amount, telegram_id))
+        update_bot_cashier(cursor, +amount, bot_id)
+
     conn.commit()
     conn.close()
 
-    return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح'})
+    return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم تعديل الكاشيرة تلقائياً'})
 
 @app.route('/api/admin/cashier/add', methods=['POST'])
 def admin_add_cashier():
@@ -991,6 +1067,6 @@ def launch_bot():
             print(f"خطأ في تشغيل البوت: {e}")
 
 if __name__ == '__main__':
-    launch_bot()  # تشغيل البوت آلياً مع تطبيق الفلاسك عند البدء
+    launch_bot()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, threaded=True)
