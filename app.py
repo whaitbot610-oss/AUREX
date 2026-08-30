@@ -31,6 +31,10 @@ def add_cors_headers(response):
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     return response
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'}), 500
+
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -75,13 +79,36 @@ def init_db():
         )
     ''')
 
+    # التحديث التلقائي لجدول المستخدمين لتجنب أخطاء قواعد البيانات القديمة
+    columns = [
+        ("site_username", "TEXT UNIQUE"),
+        ("site_password", "TEXT"),
+        ("bot_balance", "REAL DEFAULT 0.0"),
+        ("site_balance", "REAL DEFAULT 0.0"),
+        ("total_spent", "REAL DEFAULT 0.0"),
+        ("deposit_count", "INTEGER DEFAULT 0"),
+        ("withdraw_count", "INTEGER DEFAULT 0"),
+        ("referrals_count", "INTEGER DEFAULT 0"),
+        ("free_spins", "INTEGER DEFAULT 0"),
+        ("referred_by", "INTEGER"),
+        ("got_welcome_bonus", "INTEGER DEFAULT 0"),
+        ("security_passed", "INTEGER DEFAULT 0"),
+        ("is_admin", "INTEGER DEFAULT 0")
+    ]
+
+    for col_name, col_type in columns:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
     # 3. جدول المعاملات المالية
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             bot_id INTEGER DEFAULT 1,
-            type TEXT, -- 'deposit' أو 'withdraw'
+            type TEXT,
             method TEXT,
             amount REAL,
             tx_number TEXT,
@@ -97,7 +124,8 @@ def init_db():
             amount REAL,
             max_uses INTEGER,
             used_count INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -111,7 +139,7 @@ def init_db():
         )
     ''')
 
-    # 6. إعدادات النظام والخوارزميات (نسب كل رقم في العجلة)
+    # 6. إعدادات النظام والخوارزميات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -264,7 +292,7 @@ def get_user_account():
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
     data = get_req_data()
-    telegram_id = data.get('telegram_id')
+    raw_tg = str(data.get('telegram_id', '')).strip()
     site_user = str(data.get('site_user', '')).strip()
     site_pass = str(data.get('site_pass', '')).strip()
     bot_id = int(data.get('bot_id', 1))
@@ -273,13 +301,10 @@ def register_site():
     if len(site_user) < 3 or len(site_pass) < 3:
         return jsonify({'error': 'اسم المستخدم وكلمة المرور يجب أن يتجاوزا 3 خانات'}), 400
         
-    if not telegram_id:
+    if not raw_tg or not raw_tg.isdigit():
         telegram_id = random.randint(100000000, 999999999)
     else:
-        try:
-            telegram_id = int(telegram_id)
-        except ValueError:
-            telegram_id = random.randint(100000000, 999999999)
+        telegram_id = int(raw_tg)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -341,7 +366,10 @@ def register_site():
 def transfer_to_site():
     data = get_req_data()
     telegram_id = session.get('user_id') or data.get('telegram_id')
-    amount = float(data.get('amount', 0))
+    try:
+        amount = float(data.get('amount', 0))
+    except (ValueError, TypeError):
+        amount = 0
 
     if not telegram_id or amount <= 0:
         return jsonify({'error': 'بيانات التحويل غير صالحة'}), 400
@@ -373,7 +401,10 @@ def transfer_to_site():
 def transfer_to_bot():
     data = get_req_data()
     telegram_id = session.get('user_id') or data.get('telegram_id')
-    amount = float(data.get('amount', 0))
+    try:
+        amount = float(data.get('amount', 0))
+    except (ValueError, TypeError):
+        amount = 0
 
     if not telegram_id or amount <= 0:
         return jsonify({'error': 'بيانات السحب غير صالحة'}), 400
@@ -434,7 +465,7 @@ def wheel_spin():
     try:
         probs = json.loads(probs_str)
     except Exception:
-        probs = {"0": 50, "5": 25, "10": 15, "15": 5, "25": 3, "50": 1, "100": 0.8, "500": 0.15, "1000": 0.05}
+        probs = {"0": 55.0, "5": 20.0, "10": 12.0, "15": 7.0, "25": 3.5, "50": 1.5, "100": 0.8, "500": 0.15, "1000": 0.05}
 
     numbers = [int(k) for k in probs.keys()]
     weights = [float(v) for v in probs.values()]
@@ -473,9 +504,12 @@ def wheel_spin():
 def create_code():
     data = get_req_data()
     code = str(data.get('code', '')).strip()
-    amount = float(data.get('amount', 0))
-    max_uses = int(data.get('max_uses', 1))
-    bot_id = int(data.get('bot_id', 1))
+    try:
+        amount = float(data.get('amount', 0))
+        max_uses = int(data.get('max_uses', 1))
+        bot_id = int(data.get('bot_id', 1))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'بيانات الأرقام غير صالحة'}), 400
 
     if amount <= 0 or max_uses <= 0:
         return jsonify({'error': 'يرجى إدخال مبلغ وعدد استخدامات صالحين'}), 400
@@ -513,6 +547,13 @@ def create_code():
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
+
+@app.route('/api/code/active', methods=['GET'])
+def get_active_codes():
+    conn = get_db_connection()
+    codes = conn.execute("SELECT * FROM gift_codes WHERE active = 1 AND used_count < max_uses ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return jsonify([dict(c) for c in codes])
 
 @app.route('/api/code/cancel', methods=['POST'])
 def cancel_code():
@@ -596,7 +637,10 @@ def admin_update_user_balance():
     telegram_id = data.get('telegram_id')
     action = data.get('action') # 'add' أو 'deduct'
     balance_type = data.get('balance_type', 'site') # 'site' أو 'bot'
-    amount = float(data.get('amount', 0))
+    try:
+        amount = float(data.get('amount', 0))
+    except (ValueError, TypeError):
+        amount = 0
 
     if not telegram_id or amount <= 0 or action not in ['add', 'deduct']:
         return jsonify({'error': 'بيانات غير صالحة'}), 400
@@ -616,8 +660,11 @@ def admin_update_user_balance():
 @app.route('/api/admin/cashier/add', methods=['POST'])
 def admin_add_cashier():
     data = get_req_data()
-    bot_id = int(data.get('bot_id', 1))
-    amount = float(data.get('amount', 0)) # يمكن أن يكون موجباً للاضافة أو سالباً للخصم
+    try:
+        bot_id = int(data.get('bot_id', 1))
+        amount = float(data.get('amount', 0))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'بيانات القيمة غير صالحة'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -641,7 +688,7 @@ def admin_update_settings():
     cursor = conn.cursor()
 
     for k, v in data.items():
-        val_str = json.dumps(v) if isinstance(v, dict) else str(v)
+        val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (str(k), val_str))
 
     conn.commit()
