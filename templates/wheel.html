@@ -192,13 +192,13 @@
             tg.expand();
         }
 
-        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456)
+        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456 أو id=123456)
         function getTelegramUserId() {
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
                 return tg.initDataUnsafe.user.id;
             }
             const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('user_id');
+            return urlParams.get('user_id') || urlParams.get('id') || urlParams.get('telegram_id');
         }
 
         const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
@@ -254,8 +254,12 @@
             return headers;
         }
 
-        async function loadUserData() {
+        async function loadUserData(retries = 5) {
             const userId = getTelegramUserId();
+            if (!userId && retries > 0) {
+                setTimeout(() => loadUserData(retries - 1), 300);
+                return;
+            }
             try {
                 // إرسال user_id مباشرة كـ Query Parameter
                 const res = await fetch(`/api/user/account?user_id=${userId || ''}`, {
@@ -274,7 +278,10 @@
                 console.error(e); 
             }
         }
-        loadUserData();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUserData();
+        });
 
         function showError(msgText) {
             const msg = document.getElementById('resultMsg');
