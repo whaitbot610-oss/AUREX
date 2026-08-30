@@ -22,6 +22,7 @@ from telegram.ext import (
 # 0. خادم صحة الخدمة وواجهة API وعجلة الحظ (Web App Server)
 # ==========================================================
 WHEEL_VALUES = [0, 5, 10, 15, 25, 50, 100, 500, 10000]
+MAIN_LOOP = None  # مرجع حلقة الأحداث الرئيسية لإرسال الإشعارات
 
 HTML_WHEEL_PAGE = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -232,8 +233,15 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
         elif parsed_path.path == "/api/users":
+            auth_header = self.headers.get('X-Admin-Token')
+            admin_token = os.environ.get("ADMIN_API_TOKEN", "INTERNAL_SECURE_TOKEN")
+            if auth_header != admin_token:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Unauthorized")
+                return
             conn = get_db()
-            users = conn.execute("SELECT telegram_id, site_username, site_password, site_balance FROM users WHERE site_username IS NOT NULL").fetchall()
+            users = conn.execute("SELECT telegram_id, site_username, site_balance FROM users WHERE site_username IS NOT NULL").fetchall()
             conn.close()
             data = [dict(u) for u in users]
             self.send_response(200)
@@ -248,7 +256,17 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"OK - AUREX BOT IS RUNNING")
 
     def do_POST(self):
-        if self.path == "/api/spin":
+        if self.path == "/api/register":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                self._send_json({"status": "ok", "message": "Registered locally"})
+            except Exception:
+                self._send_json({"status": "error"})
+            return
+
+        elif self.path == "/api/spin":
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             try:
@@ -285,10 +303,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                     conn.commit()
                     new_bal += prize
                     
-                    if bot_app and bot_app.loop and bot_app.loop.is_running():
+                    if MAIN_LOOP and MAIN_LOOP.is_running():
                         asyncio.run_coroutine_threadsafe(
                             send_spin_notifications(user_id, prize, before_cashier, after_cashier),
-                            bot_app.loop
+                            MAIN_LOOP
                         )
                 else:
                     conn.commit()
@@ -436,7 +454,6 @@ def init_db():
         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
-    # تحديث سليم يتوافق مع قيود SQLite للأعمدة الجديدة
     existing_cols = [col[1] for col in cursor.execute("PRAGMA table_info(users)").fetchall()]
     required_cols = {
         'username': 'TEXT',
@@ -1761,7 +1778,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 6. النقطة الرئيسية للتشغيل Main Engine
 # ==========================================================
 def main():
-    global bot_app
+    global bot_app, MAIN_LOOP
     init_db()
     
     t = threading.Thread(target=start_health_check_server, daemon=True)
@@ -1777,6 +1794,8 @@ def main():
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     logging.info("AUREX bot is running...")
+    
+    MAIN_LOOP = asyncio.get_event_loop()
     bot_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
