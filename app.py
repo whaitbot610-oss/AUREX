@@ -4,6 +4,7 @@ import random
 import string
 import threading
 import subprocess
+import json
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session
@@ -11,7 +12,7 @@ from flask import Flask, request, jsonify, render_template, session
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = "aurex_casino_secret_key_2026_secure"
 
-# إعدادات الجلسات لضمان العمل المستقل
+# إعدادات الجلسات لضمان العمل المستقل والدخول الفوري
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -33,7 +34,6 @@ def add_cors_headers(response):
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30)
     conn.row_factory = sqlite3.Row
-    # تفعيل نظام WAL لتجنب إغلاق قفل قاعدة البيانات عند استخدام البوت والموقع معاً
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
@@ -74,18 +74,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # تحديث الأعمدة الهامة
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col['name'] for col in cursor.fetchall()]
-    if 'bot_balance' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN bot_balance REAL DEFAULT 0.0")
-    if 'site_balance' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN site_balance REAL DEFAULT 0.0")
-    if 'bot_id' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN bot_id INTEGER DEFAULT 1")
-    if 'free_spins' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN free_spins INTEGER DEFAULT 0")
 
     # 3. جدول المعاملات المالية
     cursor.execute('''
@@ -123,7 +111,7 @@ def init_db():
         )
     ''')
 
-    # 6. إعدادات النظام والخوارزميات
+    # 6. إعدادات النظام والخوارزميات (نسب كل رقم في العجلة)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -131,11 +119,24 @@ def init_db():
         )
     ''')
     
+    # نسب كل رقم افتراضية: الرقم -> النسبة المئوية %
+    default_wheel_probs = {
+        "0": 55.0,
+        "5": 20.0,
+        "10": 12.0,
+        "15": 7.0,
+        "25": 3.5,
+        "50": 1.5,
+        "100": 0.8,
+        "500": 0.15,
+        "1000": 0.05
+    }
+
     defaults = [
         ('maintenance', 'off'),
         ('welcome_bonus', '0'),
         ('referral_bonus', '0'),
-        ('algo_mode', 'normal') # loss, normal, medium, high, huge
+        ('wheel_probabilities', json.dumps(default_wheel_probs))
     ]
     for key, val in defaults:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
@@ -161,14 +162,12 @@ def init_db():
 
 init_db()
 
-# --- دالة مسبورة لدمج بيانات الطلب بشكل آمن ---
 def get_req_data():
     if request.is_json:
         return request.get_json(silent=True) or {}
     data = dict(request.form)
     if not data and request.data:
         try:
-            import json
             data = json.loads(request.data.decode('utf-8'))
         except Exception:
             pass
@@ -176,7 +175,6 @@ def get_req_data():
         data = dict(request.args)
     return data
 
-# --- أدوات الكاشيرة والإعدادات ---
 def get_bot_cashier(cursor, bot_id=1):
     cursor.execute("SELECT cashier_balance FROM bots WHERE id = ?", (bot_id,))
     row = cursor.fetchone()
@@ -262,7 +260,7 @@ def get_user_account():
         return jsonify({'error': 'الحساب غير موجود'}), 404
     return jsonify(dict(user))
 
-# --- إنشاء حساب وتفعيل رابط الإحالة التلقائي (لفة مجانية للداعي) ---
+# --- إنشاء حساب والعمل فوراً مع تفعيل الجلسة تلقائياً ---
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
     data = get_req_data()
@@ -286,7 +284,6 @@ def register_site():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # التحقق من أن اسم المستخدم غير محجوز لشخص آخر
     cursor.execute("SELECT * FROM users WHERE LOWER(site_username) = LOWER(?) AND telegram_id != ?", (site_user, telegram_id))
     if cursor.fetchone():
         conn.close()
@@ -305,7 +302,6 @@ def register_site():
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (telegram_id, site_user, site_user, site_pass, bot_id, referred_by))
             
-            # احتساب الإحالة وإعطاء لفة مجانية للداعي
             if referred_by:
                 try:
                     ref_id = int(referred_by)
@@ -319,13 +315,17 @@ def register_site():
 
         conn.commit()
         
-        # جلب البيانات الحالية للحساب المسجل
-        user_data = cursor.execute("SELECT telegram_id, site_username, bot_balance, site_balance, free_spins FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        user_data = cursor.execute("SELECT telegram_id, site_username, bot_balance, site_balance, free_spins, is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         conn.close()
         
+        # تسجيل دخول تلقائي
+        session.permanent = True
+        session['user_id'] = user_data['telegram_id']
+        session['is_admin'] = bool(user_data['is_admin'])
+
         return jsonify({
             'status': 'success',
-            'message': 'تم إنشاء الحساب بنجاح',
+            'message': 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
             'telegram_id': user_data['telegram_id'],
             'site_username': user_data['site_username'],
             'bot_balance': user_data['bot_balance'],
@@ -336,7 +336,7 @@ def register_site():
         conn.close()
         return jsonify({'error': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 400
 
-# --- تحويل الرصيد بين البوت والموقع تلقائياً ---
+# --- تحويل الرصيد بين البوت والموقع ---
 @app.route('/api/balance/transfer_to_site', methods=['POST'])
 def transfer_to_site():
     data = get_req_data()
@@ -364,7 +364,7 @@ def transfer_to_site():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم نقل {amount} من رصيد البوت إلى رصيد الموقع',
+        'message': f'تم نقل {amount} من رصيد البوت إلى رصيد الموقع بنجاح',
         'bot_balance': new_bot_bal,
         'site_balance': new_site_bal
     })
@@ -396,12 +396,12 @@ def transfer_to_bot():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم نقل {amount} من رصيد الموقع إلى رصيد البوت',
+        'message': f'تم نقل {amount} من رصيد الموقع إلى رصيد البوت بنجاح',
         'bot_balance': new_bot_bal,
         'site_balance': new_site_bal
     })
 
-# --- خوارزمية العجلة التفاعلية (AUREX Red & Black Wheel API) ---
+# --- خوارزمية العجلة بناء على نسبة مئوية مخصصة لكل رقم ---
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     data = get_req_data()
@@ -429,50 +429,31 @@ def wheel_spin():
         cursor.execute("UPDATE users SET site_balance = site_balance - ? WHERE telegram_id = ?", (spin_cost, user_id))
         update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
-    # احتساب الأرباح بناء على وضع الخوارزمية (الأرقام المطلوبة: 0, 5, 10, 15, 25, 50, 100, 500, 1000)
-    algo_mode = get_setting(cursor, 'algo_mode', 'normal')
-    
-    if algo_mode == 'loss':
-        p_loss, p_normal, p_med, p_high, p_huge = 90, 8, 2, 0, 0
-    elif algo_mode == 'medium':
-        p_loss, p_normal, p_med, p_high, p_huge = 35, 35, 20, 8, 2
-    elif algo_mode == 'high':
-        p_loss, p_normal, p_med, p_high, p_huge = 20, 30, 30, 15, 5
-    elif algo_mode == 'huge':
-        p_loss, p_normal, p_med, p_high, p_huge = 10, 20, 30, 25, 15
-    else: # normal
-        p_loss, p_normal, p_med, p_high, p_huge = 50, 25, 15, 8, 2
+    # جلب النسب المئوية المخصصة لكل رقم
+    probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
+    try:
+        probs = json.loads(probs_str)
+    except Exception:
+        probs = {"0": 50, "5": 25, "10": 15, "15": 5, "25": 3, "50": 1, "100": 0.8, "500": 0.15, "1000": 0.05}
 
-    roll = random.uniform(0, 100)
+    numbers = [int(k) for k in probs.keys()]
+    weights = [float(v) for v in probs.values()]
+
+    # اختيار الرقم المكسوب طبقاً للنسب المئوية
+    chosen_reward = random.choices(numbers, weights=weights, k=1)[0]
+
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
-    if roll < p_loss:
-        reward = 0
-        win_type = "loss"
-    elif roll < (p_loss + p_normal):
-        reward = random.choice([5, 10])
-        win_type = "normal"
-    elif roll < (p_loss + p_normal + p_med):
-        reward = random.choice([15, 25])
-        win_type = "medium"
-    elif roll < (p_loss + p_normal + p_med + p_high):
-        reward = random.choice([50, 100])
-        win_type = "high"
-    else:
-        reward = random.choice([500, 1000])
-        win_type = "huge"
-
     # حماية كاشيرة البوت
-    if reward > cashier:
-        reward = 0
-        win_type = "loss"
+    if chosen_reward > cashier:
+        chosen_reward = 0
 
-    msg = "حظ أوفر" if reward == 0 else f"مبروك! لقد كسبت {reward}"
+    msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} نقطة"
 
-    if reward > 0:
-        cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ?", (reward, user_id))
-        update_bot_cashier(cursor, -reward, bot_id)
+    if chosen_reward > 0:
+        cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ?", (chosen_reward, user_id))
+        update_bot_cashier(cursor, -chosen_reward, bot_id)
 
     conn.commit()
     updated_user = cursor.execute("SELECT site_balance, free_spins FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -480,15 +461,14 @@ def wheel_spin():
 
     return jsonify({
         'status': 'success',
-        'reward': reward,
-        'win_type': win_type,
+        'reward': chosen_reward,
         'message': msg,
         'is_free_spin': is_free_spin,
         'new_site_balance': updated_user['site_balance'],
         'free_spins_left': updated_user['free_spins']
     })
 
-# --- توليد الأكواد والخصم المباشر من الكاشيرة ---
+# --- توليد الأكواد والخصم وإلغاؤها ---
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
     data = get_req_data()
@@ -534,6 +514,38 @@ def create_code():
         conn.close()
         return jsonify({'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
 
+@app.route('/api/code/cancel', methods=['POST'])
+def cancel_code():
+    data = get_req_data()
+    code_text = str(data.get('code', '')).strip()
+    bot_id = int(data.get('bot_id', 1))
+
+    if not code_text:
+        return jsonify({'error': 'يرجى إدخال الكود لإلغائه'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND active = 1", (code_text,)).fetchone()
+
+    if not code_obj:
+        conn.close()
+        return jsonify({'error': 'الكود غير موجود أو غير نشط'}), 404
+
+    remaining_uses = code_obj['max_uses'] - code_obj['used_count']
+    refund_amount = remaining_uses * code_obj['amount']
+
+    cursor.execute("UPDATE gift_codes SET active = 0 WHERE code = ?", (code_text,))
+    if refund_amount > 0:
+        update_bot_cashier(cursor, refund_amount, bot_id)
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'message': f'تم إلغاء الكود بنجاح وإعادة {refund_amount} إلى كاشيرة البوت'
+    })
+
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
     data = get_req_data()
@@ -554,7 +566,7 @@ def use_code():
     code_obj = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND active = 1", (code_text,)).fetchone()
     if not code_obj or code_obj['used_count'] >= code_obj['max_uses']:
         conn.close()
-        return jsonify({'error': 'الكود غير صالح أو تم استخدامه بالكامل'}), 400
+        return jsonify({'error': 'الكود غير صالح أو ملغى أو تم استخدامه بالكامل'}), 400
 
     used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND code = ?", (telegram_id, code_text)).fetchone()
     if used:
@@ -605,7 +617,7 @@ def admin_update_user_balance():
 def admin_add_cashier():
     data = get_req_data()
     bot_id = int(data.get('bot_id', 1))
-    amount = float(data.get('amount', 0))
+    amount = float(data.get('amount', 0)) # يمكن أن يكون موجباً للاضافة أو سالباً للخصم
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -622,52 +634,6 @@ def admin_get_cashiers():
     conn.close()
     return jsonify([dict(b) for b in bots])
 
-@app.route('/api/admin/transaction/process', methods=['POST'])
-def admin_process_transaction():
-    data = get_req_data()
-    tx_id = data.get('transaction_id')
-    action = data.get('action') # 'approve' أو 'reject'
-
-    if not tx_id or action not in ['approve', 'reject']:
-        return jsonify({'error': 'بيانات غير صالحة'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    tx = cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
-    if not tx or tx['status'] != 'pending':
-        conn.close()
-        return jsonify({'error': 'الطلب غير موجود أو تمت معالجته سابقاً'}), 400
-
-    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (tx['telegram_id'],)).fetchone()
-    bot_id = tx['bot_id'] or 1
-    amount = float(tx['amount'])
-
-    if action == 'approve':
-        if tx['type'] == 'deposit':
-            cashier = get_bot_cashier(cursor, bot_id)
-            if cashier < amount:
-                conn.close()
-                return jsonify({'error': 'رصيد كاشيرة البوت غير كافٍ للقبول'}), 400
-            
-            update_bot_cashier(cursor, -amount, bot_id)
-            cursor.execute("UPDATE users SET site_balance = site_balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amount, tx['telegram_id']))
-        elif tx['type'] == 'withdraw':
-            if user['site_balance'] < amount:
-                conn.close()
-                return jsonify({'error': 'رصيد العميل غير كافٍ لإتمام السحب'}), 400
-            
-            update_bot_cashier(cursor, amount, bot_id)
-            cursor.execute("UPDATE users SET site_balance = site_balance - ?, withdraw_count = withdraw_count + 1 WHERE telegram_id = ?", (amount, tx['telegram_id']))
-
-        cursor.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (tx_id,))
-    else:
-        cursor.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (tx_id,))
-
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success', 'message': f'تم {action} الطلب بنجاح'})
-
 @app.route('/api/admin/settings/update', methods=['POST'])
 def admin_update_settings():
     data = get_req_data()
@@ -675,18 +641,25 @@ def admin_update_settings():
     cursor = conn.cursor()
 
     for k, v in data.items():
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (str(k), str(v)))
+        val_str = json.dumps(v) if isinstance(v, dict) else str(v)
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (str(k), val_str))
 
     conn.commit()
     conn.close()
-    return jsonify({'status': 'success', 'message': 'تم تحديث الإعدادات والخوارزميات بنجاح'})
+    return jsonify({'status': 'success', 'message': 'تم تحديث الإعدادات بنجاح'})
 
 @app.route('/api/admin/settings/get', methods=['GET'])
 def admin_get_settings():
     conn = get_db_connection()
     rows = conn.execute("SELECT * FROM settings").fetchall()
     conn.close()
-    return jsonify({r['key']: r['value'] for r in rows})
+    res = {}
+    for r in rows:
+        try:
+            res[r['key']] = json.loads(r['value'])
+        except Exception:
+            res[r['key']] = r['value']
+    return jsonify(res)
 
 def start_bot_process():
     try:
