@@ -11,7 +11,6 @@
             --gold-light: #f3e5ab;
             --gold-dark: #aa7c11;
             --red: #990000;
-            --red-bright: #cc0000;
             --black: #111111;
             --dark-grey: #1c1c1c;
         }
@@ -89,18 +88,6 @@
             filter: drop-shadow(0 4px 6px rgba(0,0,0,0.9));
         }
 
-        .pointer::after {
-            content: '';
-            position: absolute;
-            top: -30px;
-            left: -6px;
-            width: 0;
-            height: 0;
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-top: 12px solid #fff;
-        }
-
         .wheel-outer-ring {
             width: 320px;
             height: 320px;
@@ -148,11 +135,6 @@
             transition: all 0.2s ease-in-out;
             width: 85%;
             max-width: 320px;
-            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
-        }
-
-        .spin-btn:active {
-            transform: scale(0.96);
         }
 
         .spin-btn:disabled {
@@ -161,12 +143,11 @@
             color: #888888;
             cursor: not-allowed;
             box-shadow: none;
-            text-shadow: none;
         }
 
         .result-card {
             margin-top: 20px;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             min-height: 30px;
             text-align: center;
@@ -211,6 +192,14 @@
             tg.expand();
         }
 
+        // استخراج user_id من التليجرام بكل الطرق المتاحة
+        function getTelegramUserId() {
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                return tg.initDataUnsafe.user.id;
+            }
+            return null;
+        }
+
         const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
         const canvas = document.getElementById("wheelCanvas");
         const ctx = canvas.getContext("2d");
@@ -252,11 +241,14 @@
 
         drawWheel();
 
-        // إرسال توثيق Telegram مع الطلبات
         function getAuthHeaders() {
             const headers = { 'Content-Type': 'application/json' };
             if (tg && tg.initData) {
                 headers['X-Telegram-Init-Data'] = tg.initData;
+            }
+            const userId = getTelegramUserId();
+            if (userId) {
+                headers['X-Telegram-User-Id'] = userId;
             }
             return headers;
         }
@@ -271,10 +263,24 @@
                 if (data && !data.error) {
                     document.getElementById('site-bal').innerText = Number(data.site_balance).toFixed(2);
                     document.getElementById('free-spins').innerText = data.free_spins;
+                    document.getElementById('resultMsg').innerText = "";
+                    document.getElementById('resultMsg').style.background = "transparent";
+                } else if (data.error) {
+                    showError(data.error);
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) { 
+                console.error(e); 
+            }
         }
         loadUserData();
+
+        function showError(msgText) {
+            const msg = document.getElementById('resultMsg');
+            msg.innerText = msgText;
+            msg.style.background = "rgba(204, 0, 0, 0.25)";
+            msg.style.color = "#ff6b6b";
+            msg.style.border = "1px solid #cc0000";
+        }
 
         async function spinWheel() {
             if (isSpinning) return;
@@ -286,6 +292,7 @@
             msg.innerText = "جاري تدوير العجلة...";
             msg.style.background = "rgba(255, 255, 255, 0.1)";
             msg.style.color = "#ffffff";
+            msg.style.border = "none";
 
             try {
                 const res = await fetch('/api/wheel/spin', {
@@ -296,9 +303,7 @@
                 const data = await res.json();
 
                 if (data.error) {
-                    msg.innerText = data.error;
-                    msg.style.background = "rgba(204, 0, 0, 0.2)";
-                    msg.style.color = "#ff6b6b";
+                    showError(data.error);
                     btn.disabled = false;
                     isSpinning = false;
                     return;
@@ -336,8 +341,7 @@
                 }, 5000);
 
             } catch (err) {
-                msg.innerText = "حدث خطأ في الاتصال بالسيرفر";
-                msg.style.color = "#ff6b6b";
+                showError("حدث خطأ في الاتصال بالسيرفر");
                 btn.disabled = false;
                 isSpinning = false;
             }
