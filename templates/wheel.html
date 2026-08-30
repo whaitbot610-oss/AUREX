@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>عجلة الحظ VIP - AUREX</title>
-    <!-- Telegram WebApp SDK -->
+
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
@@ -23,14 +23,6 @@
             min-height: 100vh;
             padding: 20px 15px;
         }
-        .header {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            margin-bottom: 15px;
-        }
         .title {
             color: #f39c12;
             font-size: 24px;
@@ -45,9 +37,10 @@
             border: 1px solid #f39c12;
             border-radius: 12px;
             width: 100%;
-            max-width: 400px;
+            max-width: 320px;
             display: flex;
-            justify-content: space-around;
+            justify-content: center;
+            align-items: center;
             padding: 15px;
             margin-bottom: 25px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
@@ -56,14 +49,14 @@
             text-align: center;
         }
         .stat-title {
-            font-size: 13px;
+            font-size: 14px;
             color: #aaa;
             margin-bottom: 5px;
         }
         .stat-value {
-            font-size: 20px;
+            font-size: 26px;
             font-weight: bold;
-            color: #fff;
+            color: #f39c12;
         }
         .wheel-container {
             position: relative;
@@ -156,11 +149,7 @@
 
     <div class="stats-card">
         <div class="stat-item">
-            <div class="stat-title">رصيد الحساب</div>
-            <div class="stat-value" id="site-balance">0.00</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-title">اللفات المجانية</div>
+            <div class="stat-title">اللفات المجانية المتاحة</div>
             <div class="stat-value" id="free-spins">0</div>
         </div>
     </div>
@@ -178,6 +167,16 @@
         if (tg) {
             tg.ready();
             tg.expand();
+        }
+
+        function getTelegramId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('telegram_id')) return urlParams.get('telegram_id');
+            if (urlParams.get('user_id')) return urlParams.get('user_id');
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                return tg.initDataUnsafe.user.id;
+            }
+            return null;
         }
 
         const segments = [
@@ -224,11 +223,12 @@
 
         function getAuthHeaders() {
             const headers = { 'Content-Type': 'application/json' };
+            const tgId = getTelegramId();
+            if (tgId) {
+                headers['X-Telegram-User-Id'] = tgId;
+            }
             if (tg && tg.initData) {
                 headers['X-Telegram-Init-Data'] = tg.initData;
-            }
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                headers['X-Telegram-User-Id'] = tg.initDataUnsafe.user.id;
             }
             return headers;
         }
@@ -241,11 +241,14 @@
             setTimeout(() => { el.style.display = 'none'; }, 3000);
         }
 
+        let currentSpinsCount = 0;
+
         async function fetchAccountData() {
             try {
+                const tgId = getTelegramId();
                 let url = '/api/user/account';
-                if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                    url += '?telegram_id=' + tg.initDataUnsafe.user.id;
+                if (tgId) {
+                    url += '?telegram_id=' + tgId;
                 }
 
                 const res = await fetch(url, {
@@ -255,13 +258,8 @@
 
                 const data = await res.json();
                 if (res.ok) {
-                    const spins = data.free_spins !== undefined ? data.free_spins : (data.spins || 0);
-                    const bal = data.site_balance !== undefined ? data.site_balance : (data.balance || 0.0);
-                    
-                    document.getElementById('free-spins').innerText = spins;
-                    document.getElementById('site-balance').innerText = parseFloat(bal).toFixed(2);
-                } else {
-                    console.log("Account fetch notice:", data.error);
+                    currentSpinsCount = data.free_spins !== undefined ? data.free_spins : (data.spins || 0);
+                    document.getElementById('free-spins').innerText = currentSpinsCount;
                 }
             } catch (err) {
                 console.error("Fetch error:", err);
@@ -273,14 +271,21 @@
 
         async function spinWheel() {
             if (isSpinning) return;
+
+            if (currentSpinsCount <= 0) {
+                showAlert('ليس لديك لفات مجانية متاحة لتأدية الدورة!', true);
+                return;
+            }
+
             const spinBtn = document.getElementById('spin-btn');
             spinBtn.disabled = true;
 
             try {
+                const tgId = getTelegramId();
                 let url = '/api/wheel/spin';
                 const bodyData = {};
-                if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                    bodyData.telegram_id = tg.initDataUnsafe.user.id;
+                if (tgId) {
+                    bodyData.telegram_id = tgId;
                 }
 
                 const res = await fetch(url, {
@@ -292,7 +297,7 @@
                 const data = await res.json();
 
                 if (!res.ok) {
-                    showAlert(data.error || 'حدث خطأ أثناء التدوير', true);
+                    showAlert(data.error || 'ليس لديك لفات كافية', true);
                     spinBtn.disabled = false;
                     return;
                 }
@@ -316,8 +321,8 @@
                     spinBtn.disabled = false;
                     showAlert(data.message);
                     
-                    document.getElementById('site-balance').innerText = parseFloat(data.new_site_balance).toFixed(2);
-                    document.getElementById('free-spins').innerText = data.free_spins_left;
+                    currentSpinsCount = data.free_spins_left;
+                    document.getElementById('free-spins').innerText = currentSpinsCount;
                 }, 4000);
 
             } catch (err) {
