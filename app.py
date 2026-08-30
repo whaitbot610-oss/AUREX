@@ -231,9 +231,14 @@ def check_maintenance():
         if m == 'on':
             return jsonify({'error': 'الموقع في وضع الصيانة حالياً'}), 533
 
+# --- مسارات الصفحات الرئيسية والفرعية ---
 @app.route('/')
 def home():
     return render_template('index.html')
+
+@app.route('/wheel')
+def wheel_page():
+    return render_template('wheel.html')
 
 # --- تسجيل الدخول والتوثيق ---
 @app.route('/api/auth/login', methods=['POST'])
