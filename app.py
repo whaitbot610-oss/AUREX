@@ -246,7 +246,7 @@ def set_setting(cursor, key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 def get_authenticated_user_id():
-    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو بيانات التلجرام المشفّرة (initData)"""
+    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو بيانات التلجرام المشفّرة (initData) مع البحث الشامل والربط الفوري"""
     user_id = session.get('user_id')
     data = get_req_data()
     
@@ -275,31 +275,44 @@ def get_authenticated_user_id():
             except Exception:
                 pass
 
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
     if raw_tg:
-        try:
-            tg_id = int(raw_tg)
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (tg_id,)).fetchone()
-            if not user:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
-                    VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
-                """, (tg_id, f"user_{tg_id}", f"user_{tg_id}", f"pass_{tg_id}"))
-                conn.commit()
+        raw_str = str(raw_tg).strip()
+        # البحث بالنص، وبالرقم، وباسم المستخدم لمنع التكرار والحصول على الحساب الصحيح
+        user = cursor.execute("""
+            SELECT telegram_id FROM users 
+            WHERE CAST(telegram_id AS TEXT) = ? 
+               OR LOWER(site_username) = LOWER(?) 
+               OR LOWER(username) = LOWER(?)
+        """, (raw_str, raw_str, raw_str)).fetchone()
+
+        if user:
+            found_id = user['telegram_id']
+            conn.close()
+            session['user_id'] = found_id
+            return found_id
+
+        # إنشاء الحساب فقط إذا كان المعرّف رقمياً ولم يوجد مسبقاً في القاعدة
+        if raw_str.isdigit():
+            tg_id = int(raw_str)
+            cursor.execute("""
+                INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
+                VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
+            """, (tg_id, f"user_{tg_id}", f"user_{tg_id}", f"pass_{tg_id}"))
+            conn.commit()
             conn.close()
             session['user_id'] = tg_id
             return tg_id
-        except (ValueError, TypeError):
-            pass
 
     if user_id:
-        conn = get_db_connection()
-        user = conn.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
         conn.close()
         if user:
-            return user_id
+            return user['telegram_id']
 
+    conn.close()
     return None
 
 @app.before_request
@@ -384,7 +397,10 @@ def get_user_account():
         
     res = dict(user)
     res['free_spins'] = res['free_spins'] if res['free_spins'] is not None else 0
+    res['spins'] = res['free_spins']
+    res['freeSpins'] = res['free_spins']
     res['site_balance'] = res['site_balance'] if res['site_balance'] is not None else 0.0
+    res['balance'] = res['site_balance']
     res['bot_balance'] = res['bot_balance'] if res['bot_balance'] is not None else 0.0
     return jsonify(res)
 
@@ -868,7 +884,7 @@ def admin_update_user_balance():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    user = cursor.execute("SELECT bot_id FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    user = cursor.execute("SELECT bot_id FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     if not user:
         conn.close()
         return jsonify({'error': 'المستخدم غير موجود'}), 404
@@ -877,10 +893,10 @@ def admin_update_user_balance():
     col = "site_balance" if balance_type == 'site' else "bot_balance"
 
     if action == 'add':
-        cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ?", (amount, telegram_id))
+        cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
         update_bot_cashier(cursor, -amount, bot_id)
     else:
-        cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ?", (amount, telegram_id))
+        cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
         update_bot_cashier(cursor, +amount, bot_id)
 
     conn.commit()
@@ -891,7 +907,7 @@ def admin_update_user_balance():
 @app.route('/api/admin/spins/grant_user', methods=['POST'])
 def admin_grant_spins_user():
     data = get_req_data()
-    target_user = data.get('telegram_id') or data.get('site_username')
+    target_user = data.get('telegram_id') or data.get('site_username') or data.get('username')
     try:
         spins = int(data.get('spins', 1))
     except (ValueError, TypeError):
@@ -900,9 +916,17 @@ def admin_grant_spins_user():
     if not target_user:
         return jsonify({'error': 'يرجى تحديد معرف المستخدم أو اسم الحساب'}), 400
 
+    target_str = str(target_user).strip()
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET free_spins = free_spins + ? WHERE telegram_id = ? OR LOWER(site_username) = LOWER(?)", (spins, target_user, str(target_user)))
+    cursor.execute("""
+        UPDATE users 
+        SET free_spins = COALESCE(free_spins, 0) + ? 
+        WHERE CAST(telegram_id AS TEXT) = ? 
+           OR LOWER(site_username) = LOWER(?) 
+           OR LOWER(username) = LOWER(?)
+    """, (spins, target_str, target_str, target_str))
     conn.commit()
     conn.close()
     return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية بنجاح'})
@@ -917,7 +941,7 @@ def admin_grant_spins_all():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET free_spins = free_spins + ?", (spins,))
+    cursor.execute("UPDATE users SET free_spins = COALESCE(free_spins, 0) + ?", (spins,))
     conn.commit()
     conn.close()
     return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية لجميع المستخدمين بنجاح'})
