@@ -148,7 +148,7 @@
             <div class="admin-section">
                 <h4>تحويل رصيد لكاشيرة البوتات</h4>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <input type="text" id="cashierBotId" placeholder="معرف كاشير البوت (Bot ID)">
+                    <input type="text" id="cashierBotId" value="1" placeholder="معرف كاشير البوت (Bot ID)">
                     <input type="number" id="transferAmount" placeholder="المبلغ المراد إرساله">
                     <button class="btn-sm" style="background: var(--accent-green); padding: 10px;" onclick="transferToCashier()">إرسال الرصيد 💸</button>
                 </div>
@@ -166,6 +166,9 @@
     </div>
 
     <script>
+        // تنبيه السيرفر فوراً لإيقاظه مجاناً من حالة السبات
+        fetch('/api/ping').catch(() => {});
+
         const tg = window.Telegram.WebApp;
         tg.expand();
 
@@ -187,20 +190,19 @@
 
         async function loginWithTelegram(tgUser) {
             try {
-                const res = await fetch('/api/auth/telegram', {
+                const res = await fetch('/api/auth/telegram_login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         telegram_id: tgUser.id,
-                        first_name: tgUser.first_name || '',
-                        username: tgUser.username || ''
+                        username: tgUser.username || tgUser.first_name || ''
                     })
                 });
                 const data = await res.json();
                 if (res.ok) {
                     currentUser.id = tgUser.id;
-                    currentUser.name = tgUser.first_name;
-                    currentUser.balance = data.balance;
+                    currentUser.name = tgUser.first_name || data.username;
+                    currentUser.balance = data.site_balance || 0;
                     currentUser.isAdmin = data.is_admin || false;
                     updateUI();
                 }
@@ -210,7 +212,7 @@
         }
 
         function updateUI() {
-            document.getElementById('balance').innerText = currentUser.balance.toFixed(2);
+            document.getElementById('balance').innerText = parseFloat(currentUser.balance).toFixed(2);
             document.getElementById('authBtn').innerText = currentUser.name || 'حسابي';
             document.getElementById('adminBtn').style.display = currentUser.isAdmin ? 'inline-block' : 'none';
         }
@@ -229,8 +231,8 @@
                 const data = await res.json();
                 if (res.ok) {
                     currentUser.id = data.telegram_id || username;
-                    currentUser.name = username;
-                    currentUser.balance = data.balance;
+                    currentUser.name = data.username || username;
+                    currentUser.balance = data.site_balance || 0;
                     currentUser.isAdmin = data.is_admin || false;
                     updateUI();
                     closeModal('loginModal');
@@ -247,9 +249,9 @@
             const btn = document.getElementById('spinBtn');
             const status = document.getElementById('statusMessage');
 
-            if (!currentUser.id) return alert('يرجى الدخول عبر تلجرام أو تسجيل الدخول أولاً');
+            if (!currentUser.id) return alert('يرجى تسجيل الدخول أولاً');
             if (!bet || bet <= 0) return alert('يرجى إدخال مبلغ رهان صحيح');
-            if (bet > currentUser.balance) return alert('الرصيد غير كافٍ');
+            if (bet > currentUser.balance) return alert('الرصيد غير كافٍ في الموقع');
 
             btn.disabled = true;
             status.className = 'status';
@@ -311,14 +313,14 @@
             if (!botId || !amount) return alert('يرجى ملء جميع الحقول');
 
             try {
-                const res = await fetch('/api/admin/transfer-cashier', {
+                const res = await fetch('/api/admin/cashier/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ admin_id: currentUser.id, bot_id: botId, amount: parseFloat(amount) })
+                    body: JSON.stringify({ bot_id: parseInt(botId), amount: parseFloat(amount) })
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    alert('تم تحويل الرصيد لكاشير البوت بنجاح');
+                    alert('تم إضافة الرصيد لكاشير البوت بنجاح');
                 } else {
                     alert(data.error || 'فشلت عملية التحويل');
                 }
@@ -331,10 +333,10 @@
             const rtp = document.getElementById('rtpPercentage').value;
 
             try {
-                const res = await fetch('/api/admin/set-rtp', {
+                const res = await fetch('/api/admin/settings/update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ admin_id: currentUser.id, rtp_rate: parseFloat(rtp) })
+                    body: JSON.stringify({ rtp_rate: parseFloat(rtp) })
                 });
                 const data = await res.json();
                 if (res.ok) {
