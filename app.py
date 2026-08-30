@@ -1,4 +1,5 @@
 import os
+import sys
 import sqlite3
 import random
 import string
@@ -36,7 +37,8 @@ def handle_exception(e):
     return jsonify({'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_NAME, timeout=30)
+    # تم التعديل هنا: إضافة check_same_thread=False لمنع تعارض الخيوط المتعددة
+    conn = sqlite3.connect(DB_NAME, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
@@ -235,6 +237,11 @@ def check_maintenance():
 @app.route('/')
 def home():
     return render_template('index.html')
+
+# تم التعديل هنا: مسار مخصص لـ UptimeRobot لإبقاء السيرفر نشطاً
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    return jsonify({"status": "Server is awake"}), 200
 
 @app.route('/wheel')
 def wheel_page():
@@ -715,11 +722,13 @@ def admin_get_settings():
 
 def start_bot_process():
     try:
-        subprocess.run(["python", "bot.py"])
+        # تم التعديل هنا: استخدام Popen ليعمل في الخلفية بسلاسة
+        subprocess.Popen([sys.executable, "bot.py"])
     except Exception as e:
         print(f"Error starting bot process: {e}")
 
 if __name__ == '__main__':
     threading.Thread(target=start_bot_process, daemon=True).start()
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # تم التعديل هنا: إضافة threaded=True لمعالجة طلبات متعددة بنفس الوقت
+    app.run(host='0.0.0.0', port=port, threaded=True)
