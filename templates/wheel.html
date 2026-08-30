@@ -65,7 +65,6 @@
             margin-top: 4px;
         }
 
-        /* حاوية العجلة والسهم */
         .wheel-container {
             position: relative;
             width: 330px;
@@ -76,7 +75,6 @@
             justify-content: center;
         }
 
-        /* السهم الذهبي الاحترافي */
         .pointer {
             position: absolute;
             top: -12px;
@@ -103,7 +101,6 @@
             border-top: 12px solid #fff;
         }
 
-        /* العجلة والحدود الذهبية */
         .wheel-outer-ring {
             width: 320px;
             height: 320px;
@@ -121,7 +118,6 @@
             transition: transform 5s cubic-bezier(0.15, 0.9, 0.1, 1);
         }
 
-        /* الدائرة المركزية للغطاء الذهبي */
         .center-cap {
             position: absolute;
             width: 50px;
@@ -139,7 +135,6 @@
             font-size: 12px;
         }
 
-        /* زر التدوير الملكي */
         .spin-btn {
             background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold-dark) 100%);
             color: var(--black);
@@ -210,6 +205,12 @@
     <div id="resultMsg" class="result-card"></div>
 
     <script>
+        const tg = window.Telegram ? window.Telegram.WebApp : null;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+        }
+
         const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
         const canvas = document.getElementById("wheelCanvas");
         const ctx = canvas.getContext("2d");
@@ -218,7 +219,6 @@
         let currentRotation = 0;
         let isSpinning = false;
 
-        // رسم العجلة الاحترافية بالأحمر والأسود والذهبي
         function drawWheel() {
             const radius = canvas.width / 2;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -226,7 +226,6 @@
             for (let i = 0; i < numSectors; i++) {
                 const angle = i * arc;
                 
-                // التناوب التبادلي بين الأسود والأحمر مع حدود ذهبية
                 ctx.beginPath();
                 ctx.fillStyle = (i % 2 === 0) ? "#111111" : "#990000";
                 ctx.moveTo(radius, radius);
@@ -234,12 +233,10 @@
                 ctx.lineTo(radius, radius);
                 ctx.fill();
 
-                // خطوط الفواصل الذهبية
                 ctx.strokeStyle = "#d4af37";
                 ctx.lineWidth = 4;
                 ctx.stroke();
 
-                // كتابة الأرقام بلون ذهبي واضح
                 ctx.save();
                 ctx.translate(radius, radius);
                 ctx.rotate(angle + arc / 2);
@@ -255,20 +252,30 @@
 
         drawWheel();
 
-        // جلب بيانات المستخدم المحدثة
+        // إرسال توثيق Telegram مع الطلبات
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (tg && tg.initData) {
+                headers['X-Telegram-Init-Data'] = tg.initData;
+            }
+            return headers;
+        }
+
         async function loadUserData() {
             try {
-                const res = await fetch('/api/user/account', { credentials: 'include' });
+                const res = await fetch('/api/user/account', {
+                    headers: getAuthHeaders(),
+                    credentials: 'include'
+                });
                 const data = await res.json();
                 if (data && !data.error) {
-                    document.getElementById('site-bal').innerText = data.site_balance.toFixed(2);
+                    document.getElementById('site-bal').innerText = Number(data.site_balance).toFixed(2);
                     document.getElementById('free-spins').innerText = data.free_spins;
                 }
             } catch (e) { console.error(e); }
         }
         loadUserData();
 
-        // تدوير العجلة المباشر والربط المالي الدقيق
         async function spinWheel() {
             if (isSpinning) return;
             const btn = document.getElementById('spinBtn');
@@ -283,7 +290,7 @@
             try {
                 const res = await fetch('/api/wheel/spin', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     credentials: 'include'
                 });
                 const data = await res.json();
@@ -300,15 +307,13 @@
                 const targetReward = data.reward;
                 const index = rewards.indexOf(targetReward);
                 
-                // حساب زاوية الوقوف تحت السهم في الأعلى تماماً
                 const sectorDegrees = 360 / numSectors;
                 const targetAngle = 360 - (index * sectorDegrees) - (sectorDegrees / 2);
-                const extraRounds = 360 * 6; // 6 دورات حية كاملة
+                const extraRounds = 360 * 6;
                 
                 const finalRotation = currentRotation + extraRounds + (targetAngle - (currentRotation % 360));
                 currentRotation = finalRotation;
                 
-                // دوران سلس ينتهي بدقة عند الرقم
                 canvas.style.transform = `rotate(${currentRotation - 90}deg)`;
 
                 setTimeout(() => {
@@ -323,7 +328,6 @@
                         msg.style.border = "none";
                     }
 
-                    // تحديث الرصيد مباشرة في الشاشة
                     document.getElementById('site-bal').innerText = Number(data.new_site_balance).toFixed(2);
                     document.getElementById('free-spins').innerText = data.free_spins_left;
                     
