@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عجلة الحظ الملكية - AUREX VIP</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --gold: #d4af37;
+            --gold-light: #f3e5ab;
+            --gold-dark: #aa7c11;
+            --red: #990000;
+            --red-bright: #cc0000;
+            --black: #111111;
+            --dark-grey: #1c1c1c;
+        }
+
+        body {
+            background: radial-gradient(circle, #222222 0%, #050505 100%);
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+
+        .header-title {
+            color: var(--gold);
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+            font-size: 24px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        .stats-card {
+            background: linear-gradient(145deg, var(--dark-grey), #0a0a0a);
+            border: 2px solid var(--gold);
+            border-radius: 15px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+        }
+
+        .stat-item {
+            text-align: center;
+            font-size: 13px;
+            color: #ccc;
+        }
+
+        .stat-val {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--gold-light);
+            margin-top: 4px;
+        }
+
+        /* حاوية العجلة والسهم */
+        .wheel-container {
+            position: relative;
+            width: 330px;
+            height: 330px;
+            margin: 10px auto 25px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* السهم الذهبي الاحترافي */
+        .pointer {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 14px solid transparent;
+            border-right: 14px solid transparent;
+            border-top: 28px solid var(--gold);
+            z-index: 20;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.9));
+        }
+
+        .pointer::after {
+            content: '';
+            position: absolute;
+            top: -30px;
+            left: -6px;
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 12px solid #fff;
+        }
+
+        /* العجلة والحدود الذهبية */
+        .wheel-outer-ring {
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            border: 8px solid var(--gold);
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.4), inset 0 0 15px rgba(0,0,0,0.9);
+            position: relative;
+            overflow: hidden;
+            background-color: var(--black);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            transition: transform 5s cubic-bezier(0.15, 0.9, 0.1, 1);
+        }
+
+        /* الدائرة المركزية للغطاء الذهبي */
+        .center-cap {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: radial-gradient(circle, var(--gold-light) 0%, var(--gold-dark) 100%);
+            border: 3px solid var(--black);
+            border-radius: 50%;
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--black);
+            font-size: 12px;
+        }
+
+        /* زر التدوير الملكي */
+        .spin-btn {
+            background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold-dark) 100%);
+            color: var(--black);
+            border: 2px solid var(--gold);
+            padding: 14px 45px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+            transition: all 0.2s ease-in-out;
+            width: 85%;
+            max-width: 320px;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+        }
+
+        .spin-btn:active {
+            transform: scale(0.96);
+        }
+
+        .spin-btn:disabled {
+            background: #444444;
+            border-color: #222222;
+            color: #888888;
+            cursor: not-allowed;
+            box-shadow: none;
+            text-shadow: none;
+        }
+
+        .result-card {
+            margin-top: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 30px;
+            text-align: center;
+            padding: 8px 15px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-title">🎡 عجلة الحظ VIP</div>
+
+    <div class="stats-card">
+        <div class="stat-item">
+            رصيد الحساب
+            <div class="stat-val" id="site-bal">0.0</div>
+        </div>
+        <div class="stat-item">
+            اللفة المجانية
+            <div class="stat-val" id="free-spins">0</div>
+        </div>
+    </div>
+
+    <div class="wheel-container">
+        <div class="pointer"></div>
+        <div class="wheel-outer-ring">
+            <canvas id="wheelCanvas" width="500" height="500"></canvas>
+        </div>
+        <div class="center-cap">AUREX</div>
+    </div>
+
+    <button id="spinBtn" class="spin-btn" onclick="spinWheel()">در العجلة الآن 🎲</button>
+
+    <div id="resultMsg" class="result-card"></div>
+
+    <script>
+        const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
+        const canvas = document.getElementById("wheelCanvas");
+        const ctx = canvas.getContext("2d");
+        const numSectors = rewards.length;
+        const arc = (2 * Math.PI) / numSectors;
+        let currentRotation = 0;
+        let isSpinning = false;
+
+        // رسم العجلة الاحترافية بالأحمر والأسود والذهبي
+        function drawWheel() {
+            const radius = canvas.width / 2;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < numSectors; i++) {
+                const angle = i * arc;
+                
+                // التناوب التبادلي بين الأسود والأحمر مع حدود ذهبية
+                ctx.beginPath();
+                ctx.fillStyle = (i % 2 === 0) ? "#111111" : "#990000";
+                ctx.moveTo(radius, radius);
+                ctx.arc(radius, radius, radius, angle, angle + arc);
+                ctx.lineTo(radius, radius);
+                ctx.fill();
+
+                // خطوط الفواصل الذهبية
+                ctx.strokeStyle = "#d4af37";
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                // كتابة الأرقام بلون ذهبي واضح
+                ctx.save();
+                ctx.translate(radius, radius);
+                ctx.rotate(angle + arc / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#f3e5ab";
+                ctx.font = "bold 26px Tahoma, sans-serif";
+                ctx.shadowColor = "#000000";
+                ctx.shadowBlur = 5;
+                ctx.fillText(rewards[i], radius - 30, 8);
+                ctx.restore();
+            }
+        }
+
+        drawWheel();
+
+        // جلب بيانات المستخدم المحدثة
+        async function loadUserData() {
+            try {
+                const res = await fetch('/api/user/account', { credentials: 'include' });
+                const data = await res.json();
+                if (data && !data.error) {
+                    document.getElementById('site-bal').innerText = data.site_balance.toFixed(2);
+                    document.getElementById('free-spins').innerText = data.free_spins;
+                }
+            } catch (e) { console.error(e); }
+        }
+        loadUserData();
+
+        // تدوير العجلة المباشر والربط المالي الدقيق
+        async function spinWheel() {
+            if (isSpinning) return;
+            const btn = document.getElementById('spinBtn');
+            const msg = document.getElementById('resultMsg');
+            
+            btn.disabled = true;
+            isSpinning = true;
+            msg.innerText = "جاري تدوير العجلة...";
+            msg.style.background = "rgba(255, 255, 255, 0.1)";
+            msg.style.color = "#ffffff";
+
+            try {
+                const res = await fetch('/api/wheel/spin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    msg.innerText = data.error;
+                    msg.style.background = "rgba(204, 0, 0, 0.2)";
+                    msg.style.color = "#ff6b6b";
+                    btn.disabled = false;
+                    isSpinning = false;
+                    return;
+                }
+
+                const targetReward = data.reward;
+                const index = rewards.indexOf(targetReward);
+                
+                // حساب زاوية الوقوف تحت السهم في الأعلى تماماً
+                const sectorDegrees = 360 / numSectors;
+                const targetAngle = 360 - (index * sectorDegrees) - (sectorDegrees / 2);
+                const extraRounds = 360 * 6; // 6 دورات حية كاملة
+                
+                const finalRotation = currentRotation + extraRounds + (targetAngle - (currentRotation % 360));
+                currentRotation = finalRotation;
+                
+                // دوران سلس ينتهي بدقة عند الرقم
+                canvas.style.transform = `rotate(${currentRotation - 90}deg)`;
+
+                setTimeout(() => {
+                    msg.innerText = data.message;
+                    if (targetReward > 0) {
+                        msg.style.background = "rgba(212, 175, 55, 0.2)";
+                        msg.style.color = "#d4af37";
+                        msg.style.border = "1px solid #d4af37";
+                    } else {
+                        msg.style.background = "rgba(255, 255, 255, 0.05)";
+                        msg.style.color = "#aaaaaa";
+                        msg.style.border = "none";
+                    }
+
+                    // تحديث الرصيد مباشرة في الشاشة
+                    document.getElementById('site-bal').innerText = Number(data.new_site_balance).toFixed(2);
+                    document.getElementById('free-spins').innerText = data.free_spins_left;
+                    
+                    isSpinning = false;
+                    btn.disabled = false;
+                }, 5000);
+
+            } catch (err) {
+                msg.innerText = "حدث خطأ في الاتصال بالسيرفر";
+                msg.style.color = "#ff6b6b";
+                btn.disabled = false;
+                isSpinning = false;
+            }
+        }
+    </script>
+</body>
+</html>
