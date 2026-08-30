@@ -37,7 +37,6 @@ def handle_exception(e):
     return jsonify({'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'}), 500
 
 def get_db_connection():
-    # تم التعديل هنا: إضافة check_same_thread=False لمنع تعارض الخيوط المتعددة
     conn = sqlite3.connect(DB_NAME, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -58,7 +57,7 @@ def init_db():
         )
     ''')
 
-    # 2. جدول المستخدمين (فصل رصيد البوت عن الموقع + الإحالات واللفات)
+    # 2. جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
@@ -81,7 +80,6 @@ def init_db():
         )
     ''')
 
-    # التحديث التلقائي لجدول المستخدمين لتجنب أخطاء قواعد البيانات القديمة
     columns = [
         ("site_username", "TEXT UNIQUE"),
         ("site_password", "TEXT"),
@@ -149,7 +147,7 @@ def init_db():
         )
     ''')
     
-    # نسب كل رقم افتراضية: الرقم -> النسبة المئوية %
+    # نسب كل رقم افتراضية بالعجلة (%)
     default_wheel_probs = {
         "0": 55.0,
         "5": 20.0,
@@ -179,7 +177,6 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO bots (id, bot_name, cashier_balance) VALUES (2, 'Secondary Bot', 10000.0)")
 
-    # حساب المدير الافتراضي
     cursor.execute("SELECT * FROM users WHERE site_username = 'Admin'")
     if not cursor.fetchone():
         cursor.execute('''
@@ -233,12 +230,11 @@ def check_maintenance():
         if m == 'on':
             return jsonify({'error': 'الموقع في وضع الصيانة حالياً'}), 533
 
-# --- مسارات الصفحات الرئيسية والفرعية ---
+# --- الصفحات ---
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# تم التعديل هنا: مسار مخصص لـ UptimeRobot لإبقاء السيرفر نشطاً
 @app.route('/api/ping', methods=['GET'])
 def ping():
     return jsonify({"status": "Server is awake"}), 200
@@ -247,7 +243,7 @@ def ping():
 def wheel_page():
     return render_template('wheel.html')
 
-# --- تسجيل الدخول والتوثيق ---
+# --- توثيق وتسجيل الدخول ---
 @app.route('/api/auth/login', methods=['POST'])
 def login_site():
     data = get_req_data()
@@ -282,6 +278,46 @@ def login_site():
         'is_admin': bool(user['is_admin'])
     })
 
+@app.route('/api/auth/telegram_login', methods=['POST'])
+def telegram_login():
+    data = get_req_data()
+    raw_tg = str(data.get('telegram_id', '')).strip()
+    username = str(data.get('username', '')).strip()
+
+    if not raw_tg or not raw_tg.isdigit():
+        return jsonify({'error': 'معرف التليجرام غير صالح'}), 400
+
+    telegram_id = int(raw_tg)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    if not user:
+        site_user = username or f"user_{telegram_id}"
+        cursor.execute('''
+            INSERT INTO users (telegram_id, username, site_username, site_password, bot_id)
+            VALUES (?, ?, ?, ?, 1)
+        ''', (telegram_id, username, site_user, "tg_auto_pass"))
+        conn.commit()
+        user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    conn.close()
+
+    session.permanent = True
+    session['user_id'] = user['telegram_id']
+    session['is_admin'] = bool(user['is_admin'])
+
+    return jsonify({
+        'status': 'success',
+        'telegram_id': user['telegram_id'],
+        'username': user['site_username'] or user['username'],
+        'bot_balance': user['bot_balance'],
+        'site_balance': user['site_balance'],
+        'free_spins': user['free_spins'],
+        'referrals_count': user['referrals_count'],
+        'is_admin': bool(user['is_admin'])
+    })
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout_site():
     session.clear()
@@ -300,7 +336,6 @@ def get_user_account():
         return jsonify({'error': 'الحساب غير موجود'}), 404
     return jsonify(dict(user))
 
-# --- إنشاء حساب والعمل فوراً مع تفعيل الجلسة تلقائياً ---
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
     data = get_req_data()
@@ -355,7 +390,6 @@ def register_site():
         user_data = cursor.execute("SELECT telegram_id, site_username, bot_balance, site_balance, free_spins, is_admin FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         conn.close()
         
-        # تسجيل دخول تلقائي
         session.permanent = True
         session['user_id'] = user_data['telegram_id']
         session['is_admin'] = bool(user_data['is_admin'])
@@ -373,7 +407,7 @@ def register_site():
         conn.close()
         return jsonify({'error': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 400
 
-# --- تحويل الرصيد بين البوت والموقع ---
+# --- تحويل الرصيد ---
 @app.route('/api/balance/transfer_to_site', methods=['POST'])
 def transfer_to_site():
     data = get_req_data()
@@ -444,7 +478,7 @@ def transfer_to_bot():
         'site_balance': new_site_bal
     })
 
-# --- خوارزمية العجلة بناء على نسبة مئوية مخصصة لكل رقم ---
+# --- خوارزمية العجلة بالنسب المئوية ---
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     data = get_req_data()
@@ -472,7 +506,6 @@ def wheel_spin():
         cursor.execute("UPDATE users SET site_balance = site_balance - ? WHERE telegram_id = ?", (spin_cost, user_id))
         update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
-    # جلب النسب المئوية المخصصة لكل رقم
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
         probs = json.loads(probs_str)
@@ -482,13 +515,11 @@ def wheel_spin():
     numbers = [int(k) for k in probs.keys()]
     weights = [float(v) for v in probs.values()]
 
-    # اختيار الرقم المكسوب طبقاً للنسب المئوية
     chosen_reward = random.choices(numbers, weights=weights, k=1)[0]
 
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
-    # حماية كاشيرة البوت
     if chosen_reward > cashier:
         chosen_reward = 0
 
@@ -511,7 +542,7 @@ def wheel_spin():
         'free_spins_left': updated_user['free_spins']
     })
 
-# --- توليد الأكواد والخصم وإلغاؤها ---
+# --- الأكواد ---
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
     data = get_req_data()
@@ -635,7 +666,7 @@ def use_code():
 
     return jsonify({'status': 'success', 'message': f'تمت إضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك بنجاح'})
 
-# --- لوحة التحكم للإدارة (Admin Panel APIs) ---
+# --- لوحة الإدارة ---
 @app.route('/api/admin/users', methods=['GET'])
 def admin_get_users():
     conn = get_db_connection()
@@ -643,12 +674,60 @@ def admin_get_users():
     conn.close()
     return jsonify([dict(u) for u in users])
 
+@app.route('/api/admin/spins/grant_user', methods=['POST'])
+def admin_grant_spins_user():
+    data = get_req_data()
+    target_user = data.get('telegram_id') or data.get('site_username')
+    try:
+        spins = int(data.get('spins', 1))
+    except (ValueError, TypeError):
+        spins = 1
+
+    if not target_user:
+        return jsonify({'error': 'يرجى تحديد معرف المستخدم أو اسم الحساب'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET free_spins = free_spins + ? WHERE telegram_id = ? OR site_username = ?", (spins, target_user, target_user))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة للمستخدم بنجاح'})
+
+@app.route('/api/admin/spins/grant_all', methods=['POST'])
+def admin_grant_spins_all():
+    data = get_req_data()
+    try:
+        spins = int(data.get('spins', 1))
+    except (ValueError, TypeError):
+        spins = 1
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET free_spins = free_spins + ?", (spins,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة لجميع المستخدمين بنجاح'})
+
+@app.route('/api/admin/wheel/update_probs', methods=['POST'])
+def update_wheel_probs():
+    data = get_req_data()
+    probs = data.get('probabilities')
+    if not probs or not isinstance(probs, dict):
+        return jsonify({'error': 'صيغة النسب المئوية غير صالحة'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('wheel_probabilities', ?)", (json.dumps(probs),))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success', 'message': 'تم تحديث نسب احتمالات العجلة بنجاح'})
+
 @app.route('/api/admin/user/update_balance', methods=['POST'])
 def admin_update_user_balance():
     data = get_req_data()
     telegram_id = data.get('telegram_id')
-    action = data.get('action') # 'add' أو 'deduct'
-    balance_type = data.get('balance_type', 'site') # 'site' أو 'bot'
+    action = data.get('action')
+    balance_type = data.get('balance_type', 'site')
     try:
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
@@ -720,15 +799,18 @@ def admin_get_settings():
             res[r['key']] = r['value']
     return jsonify(res)
 
-def start_bot_process():
-    try:
-        # تم التعديل هنا: استخدام Popen ليعمل في الخلفية بسلاسة
-        subprocess.Popen([sys.executable, "bot.py"])
-    except Exception as e:
-        print(f"Error starting bot process: {e}")
+# --- تشغيل ملف البوت تلقائياً في الخلفية (متوافق مع Render) ---
+def launch_bot():
+    if os.environ.get("BOT_LAUNCHED") != "true":
+        os.environ["BOT_LAUNCHED"] = "true"
+        try:
+            subprocess.Popen([sys.executable, "bot.py"])
+            print(">>> تم تشغيل bot.py تلقائياً بنجاح <<<")
+        except Exception as e:
+            print(f"خطأ في تشغيل البوت: {e}")
+
+launch_bot()
 
 if __name__ == '__main__':
-    threading.Thread(target=start_bot_process, daemon=True).start()
     port = int(os.environ.get('PORT', 5000))
-    # تم التعديل هنا: إضافة threaded=True لمعالجة طلبات متعددة بنفس الوقت
     app.run(host='0.0.0.0', port=port, threaded=True)
