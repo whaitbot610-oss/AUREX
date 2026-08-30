@@ -147,7 +147,6 @@ def init_db():
         )
     ''')
     
-    # نسب كل رقم افتراضية بالعجلة (%)
     default_wheel_probs = {
         "0": 55.0,
         "5": 20.0,
@@ -164,6 +163,7 @@ def init_db():
         ('maintenance', 'off'),
         ('welcome_bonus', '0'),
         ('referral_bonus', '0'),
+        ('rtp_rate', '30.0'),  # نسبة الفوز الافتراضية لللاعبين (30%)
         ('wheel_probabilities', json.dumps(default_wheel_probs))
     ]
     for key, val in defaults:
@@ -476,6 +476,187 @@ def transfer_to_bot():
         'message': f'تم نقل {amount} من رصيد الموقع إلى رصيد البوت بنجاح',
         'bot_balance': new_bot_bal,
         'site_balance': new_site_bal
+    })
+
+# ==================== الألعاب (GAMES ENDPOINTS) ====================
+
+# 1. لعبة الفواكه (Slot Machine)
+@app.route('/api/play', methods=['POST'])
+def play_slot_game():
+    data = get_req_data()
+    telegram_id = session.get('user_id') or data.get('telegram_id')
+    try:
+        bet = float(data.get('bet_amount', 0))
+    except (ValueError, TypeError):
+        bet = 0
+
+    if not telegram_id or bet <= 0:
+        return jsonify({'error': 'مبلغ الرهان أو بيانات المستخدم غير صالحة'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user:
+        conn.close()
+        return jsonify({'error': 'المستخدم غير موجود'}), 404
+
+    if user['site_balance'] < bet:
+        conn.close()
+        return jsonify({'error': 'رصيد الموقع غير كافٍ للرهان'}), 400
+
+    try:
+        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
+    except Exception:
+        rtp_rate = 30.0
+
+    win = (random.uniform(0, 100)) <= rtp_rate
+    bot_id = user['bot_id'] or 1
+    cashier = get_bot_cashier(cursor, bot_id)
+
+    multiplier = 2.0
+    payout = bet * multiplier
+
+    # عدم السماح بالفوز إذا كانت كاشيرة البوت لا تغطي الجائزة
+    if win and (payout - bet) > cashier:
+        win = False
+        payout = 0.0
+
+    if win:
+        new_balance = user['site_balance'] - bet + payout
+        update_bot_cashier(cursor, -(payout - bet), bot_id)
+    else:
+        payout = 0.0
+        new_balance = user['site_balance'] - bet
+        update_bot_cashier(cursor, bet, bot_id)
+
+    cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'win': win,
+        'payout': payout,
+        'new_balance': new_balance
+    })
+
+# 2. لعبة رمي العملة (Coin Flip 50/50)
+@app.route('/api/games/coinflip', methods=['POST'])
+def coin_flip_game():
+    data = get_req_data()
+    telegram_id = session.get('user_id') or data.get('telegram_id')
+    user_choice = str(data.get('choice', 'heads')).lower() # heads or tails
+    try:
+        bet = float(data.get('bet_amount', 0))
+    except (ValueError, TypeError):
+        bet = 0
+
+    if not telegram_id or bet <= 0 or user_choice not in ['heads', 'tails']:
+        return jsonify({'error': 'بيانات الرهان غير صالحة'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user or user['site_balance'] < bet:
+        conn.close()
+        return jsonify({'error': 'رصيد غير كافٍ'}), 400
+
+    try:
+        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
+    except Exception:
+        rtp_rate = 30.0
+
+    win = (random.uniform(0, 100)) <= rtp_rate
+    outcome = user_choice if win else ('tails' if user_choice == 'heads' else 'heads')
+    bot_id = user['bot_id'] or 1
+    cashier = get_bot_cashier(cursor, bot_id)
+
+    payout = bet * 1.95
+    if win and (payout - bet) > cashier:
+        win = False
+        outcome = 'tails' if user_choice == 'heads' else 'heads'
+        payout = 0.0
+
+    if win:
+        new_balance = user['site_balance'] - bet + payout
+        update_bot_cashier(cursor, -(payout - bet), bot_id)
+    else:
+        payout = 0.0
+        new_balance = user['site_balance'] - bet
+        update_bot_cashier(cursor, bet, bot_id)
+
+    cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'outcome': outcome,
+        'win': win,
+        'payout': payout,
+        'new_balance': new_balance
+    })
+
+# 3. لعبة رمي النرد (Dice Roll)
+@app.route('/api/games/dice', methods=['POST'])
+def dice_game():
+    data = get_req_data()
+    telegram_id = session.get('user_id') or data.get('telegram_id')
+    try:
+        bet = float(data.get('bet_amount', 0))
+        prediction = int(data.get('prediction', 4)) # التخمين (1-6)
+    except (ValueError, TypeError):
+        bet = 0
+        prediction = 0
+
+    if not telegram_id or bet <= 0 or prediction < 1 or prediction > 6:
+        return jsonify({'error': 'بيانات التخمين والرهان غير صالحة'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+    if not user or user['site_balance'] < bet:
+        conn.close()
+        return jsonify({'error': 'رصيد غير كافٍ'}), 400
+
+    try:
+        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
+    except Exception:
+        rtp_rate = 30.0
+
+    win = (random.uniform(0, 100)) <= rtp_rate
+    bot_id = user['bot_id'] or 1
+    cashier = get_bot_cashier(cursor, bot_id)
+
+    dice_result = prediction if win else random.choice([i for i in range(1, 7) if i != prediction])
+    payout = bet * 5.0
+
+    if win and (payout - bet) > cashier:
+        win = False
+        dice_result = random.choice([i for i in range(1, 7) if i != prediction])
+        payout = 0.0
+
+    if win:
+        new_balance = user['site_balance'] - bet + payout
+        update_bot_cashier(cursor, -(payout - bet), bot_id)
+    else:
+        payout = 0.0
+        new_balance = user['site_balance'] - bet
+        update_bot_cashier(cursor, bet, bot_id)
+
+    cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'dice_result': dice_result,
+        'win': win,
+        'payout': payout,
+        'new_balance': new_balance
     })
 
 # --- خوارزمية العجلة بالنسب المئوية ---
