@@ -199,12 +199,13 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO bots (id, bot_name, cashier_balance) VALUES (1, 'AUREX Main Bot', 10000.0)")
 
+    # تم تصحيح الخطأ هنا عبر إزالة القيم الزائدة في التوبل
     cursor.execute("SELECT * FROM users WHERE site_username = 'Admin'")
     if not cursor.fetchone():
         cursor.execute('''
             INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, is_admin)
             VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
-        ''', (999999, 'Admin', 'Admin', 'Admin096', 0.0, 0.0))
+        ''', (999999, 'Admin', 'Admin', 'Admin096'))
 
     conn.commit()
     conn.close()
