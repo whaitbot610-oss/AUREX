@@ -10,7 +10,7 @@ import urllib.request
 import urllib.parse
 from datetime import datetime
 from functools import wraps
-from flask import Flask, request, jsonify, render_template, session
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "aurex_casino_secret_key_2026_secure")
@@ -282,13 +282,16 @@ def check_maintenance():
 def home():
     return render_template('index.html')
 
-@app.route('/api/ping', methods=['GET'])
-def ping():
-    return jsonify({"status": "Server is awake"}), 200
-
 @app.route('/wheel')
 def wheel_page():
     return render_template('wheel.html')
+
+# مسار لوحة الإدارة الداخلية في الموقع
+@app.route('/admin')
+def admin_dashboard():
+    if not session.get('is_admin'):
+        return "غير مصرح لك بالدخول إلى لوحة الإدارة", 403
+    return render_template('admin.html')
 
 # --- المصادقة والحسابات ---
 @app.route('/api/auth/login', methods=['POST'])
