@@ -3,187 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>عجلة الحظ الملكية - AUREX VIP</title>
+    <title>عجلة الحظ VIP - AUREX</title>
+    <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root {
-            --gold: #d4af37;
-            --gold-light: #f3e5ab;
-            --gold-dark: #aa7c11;
-            --red: #990000;
-            --black: #111111;
-            --dark-grey: #1c1c1c;
-        }
-
-        body {
-            background: radial-gradient(circle, #222222 0%, #050505 100%);
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        * {
+            box-sizing: border-box;
             margin: 0;
-            padding: 15px;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #0d0f12;
+            color: #ffffff;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             min-height: 100vh;
-            box-sizing: border-box;
-            overflow-x: hidden;
+            padding: 20px 15px;
         }
-
-        .header-title {
-            color: var(--gold);
-            text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
-            font-size: 24px;
+        .header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
             margin-bottom: 15px;
-            font-weight: bold;
         }
-
-        .stats-card {
-            background: linear-gradient(145deg, var(--dark-grey), #0a0a0a);
-            border: 2px solid var(--gold);
-            border-radius: 15px;
-            padding: 12px 20px;
+        .title {
+            color: #f39c12;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
             margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(243, 156, 18, 0.4);
+        }
+        .stats-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #f39c12;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
             display: flex;
             justify-content: space-around;
-            width: 100%;
-            max-width: 360px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+            padding: 15px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
         }
-
         .stat-item {
             text-align: center;
+        }
+        .stat-title {
             font-size: 13px;
-            color: #ccc;
+            color: #aaa;
+            margin-bottom: 5px;
         }
-
-        .stat-val {
-            font-size: 18px;
+        .stat-value {
+            font-size: 20px;
             font-weight: bold;
-            color: var(--gold-light);
-            margin-top: 4px;
+            color: #fff;
         }
-
         .wheel-container {
             position: relative;
-            width: 330px;
-            height: 330px;
-            margin: 10px auto 25px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            width: 320px;
+            height: 320px;
+            margin-bottom: 30px;
         }
-
         .pointer {
             position: absolute;
-            top: -12px;
+            top: -15px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 14px solid transparent;
-            border-right: 14px solid transparent;
-            border-top: 28px solid var(--gold);
-            z-index: 20;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.9));
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 25px solid #f39c12;
+            z-index: 10;
         }
-
-        .wheel-outer-ring {
-            width: 320px;
-            height: 320px;
-            border-radius: 50%;
-            border: 8px solid var(--gold);
-            box-shadow: 0 0 25px rgba(212, 175, 55, 0.4), inset 0 0 15px rgba(0,0,0,0.9);
-            position: relative;
-            overflow: hidden;
-            background-color: var(--black);
-        }
-
-        canvas {
+        .wheel {
             width: 100%;
             height: 100%;
-            transition: transform 5s cubic-bezier(0.15, 0.9, 0.1, 1);
-        }
-
-        .center-cap {
-            position: absolute;
-            width: 50px;
-            height: 50px;
-            background: radial-gradient(circle, var(--gold-light) 0%, var(--gold-dark) 100%);
-            border: 3px solid var(--black);
             border-radius: 50%;
-            z-index: 10;
-            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            border: 6px solid #f39c12;
+            box-shadow: 0 0 20px rgba(243, 156, 18, 0.5);
+            transition: transform 4s cubic-bezier(0.15, 0.99, 0.35, 1);
+        }
+        .center-hub {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: #f39c12;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: #000;
             font-weight: bold;
-            color: var(--black);
-            font-size: 12px;
+            font-size: 11px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            border: 2px solid #fff;
+            z-index: 5;
         }
-
         .spin-btn {
-            background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold-dark) 100%);
-            color: var(--black);
-            border: 2px solid var(--gold);
-            padding: 14px 45px;
+            background: linear-gradient(135deg, #f39c12, #d35400);
+            color: #fff;
+            border: none;
+            width: 100%;
+            max-width: 320px;
+            padding: 16px;
             font-size: 18px;
             font-weight: bold;
-            border-radius: 50px;
+            border-radius: 25px;
             cursor: pointer;
-            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
-            transition: all 0.2s ease-in-out;
-            width: 85%;
-            max-width: 320px;
+            box-shadow: 0 5px 15px rgba(243, 156, 18, 0.4);
+            transition: all 0.2s ease;
         }
-
+        .spin-btn:active {
+            transform: scale(0.98);
+        }
         .spin-btn:disabled {
-            background: #444444;
-            border-color: #222222;
-            color: #888888;
-            cursor: not-allowed;
+            background: #555;
             box-shadow: none;
+            cursor: not-allowed;
         }
-
-        .result-card {
-            margin-top: 20px;
-            font-size: 15px;
-            font-weight: bold;
-            min-height: 30px;
-            text-align: center;
-            padding: 8px 15px;
+        .alert-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #27ae60;
+            color: white;
+            padding: 12px 24px;
             border-radius: 8px;
-            width: 80%;
-            max-width: 300px;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            text-align: center;
         }
     </style>
 </head>
 <body>
 
-    <div class="header-title">🎡 عجلة الحظ VIP</div>
+    <div id="alert" class="alert-box"></div>
+
+    <div class="title">🎡 عجلة الحظ VIP</div>
 
     <div class="stats-card">
         <div class="stat-item">
-            رصيد الحساب
-            <div class="stat-val" id="site-bal">0.00</div>
+            <div class="stat-title">رصيد الحساب</div>
+            <div class="stat-value" id="site-balance">0.00</div>
         </div>
         <div class="stat-item">
-            اللفات المجانية
-            <div class="stat-val" id="free-spins">0</div>
+            <div class="stat-title">اللفات المجانية</div>
+            <div class="stat-value" id="free-spins">0</div>
         </div>
     </div>
 
     <div class="wheel-container">
         <div class="pointer"></div>
-        <div class="wheel-outer-ring">
-            <canvas id="wheelCanvas" width="500" height="500"></canvas>
-        </div>
-        <div class="center-cap">AUREX</div>
+        <canvas id="wheelCanvas" width="320" height="320" class="wheel"></canvas>
+        <div class="center-hub">AUREX</div>
     </div>
 
-    <button id="spinBtn" class="spin-btn" onclick="spinWheel()">أدر العجلة الآن 🎲</button>
-
-    <div id="resultMsg" class="result-card"></div>
+    <button id="spin-btn" class="spin-btn" onclick="spinWheel()">أدر العجلة الآن 🎲</button>
 
     <script>
         const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -192,54 +180,46 @@
             tg.expand();
         }
 
-        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456 أو id=123456 أو telegram_id=123456)
-        function getTelegramUserId() {
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
-                return tg.initDataUnsafe.user.id;
-            }
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('telegram_id') || urlParams.get('user_id') || urlParams.get('id');
-        }
+        const segments = [
+            { label: "0", color: "#8b0000" },
+            { label: "1000", color: "#1a1a1a" },
+            { label: "500", color: "#8b0000" },
+            { label: "100", color: "#1a1a1a" },
+            { label: "50", color: "#8b0000" },
+            { label: "25", color: "#1a1a1a" },
+            { label: "15", color: "#8b0000" },
+            { label: "10", color: "#1a1a1a" },
+            { label: "5", color: "#8b0000" }
+        ];
 
-        const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
-        const canvas = document.getElementById("wheelCanvas");
-        const ctx = canvas.getContext("2d");
-        const numSectors = rewards.length;
-        const arc = (2 * Math.PI) / numSectors;
-        let currentRotation = 0;
-        let isSpinning = false;
+        const canvas = document.getElementById('wheelCanvas');
+        const ctx = canvas.getContext('2d');
+        const numSegments = segments.length;
+        const anglePerSegment = (2 * Math.PI) / numSegments;
 
         function drawWheel() {
-            const radius = canvas.width / 2;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            for (let i = 0; i < numSectors; i++) {
-                const angle = i * arc;
-                
+            for (let i = 0; i < numSegments; i++) {
+                const angle = i * anglePerSegment;
                 ctx.beginPath();
-                ctx.fillStyle = (i % 2 === 0) ? "#111111" : "#990000";
-                ctx.moveTo(radius, radius);
-                ctx.arc(radius, radius, radius, angle, angle + arc);
-                ctx.lineTo(radius, radius);
+                ctx.fillStyle = segments[i].color;
+                ctx.moveTo(160, 160);
+                ctx.arc(160, 160, 160, angle, angle + anglePerSegment);
+                ctx.lineTo(160, 160);
                 ctx.fill();
-
-                ctx.strokeStyle = "#d4af37";
-                ctx.lineWidth = 4;
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#f39c12';
                 ctx.stroke();
 
                 ctx.save();
-                ctx.translate(radius, radius);
-                ctx.rotate(angle + arc / 2);
+                ctx.translate(160, 160);
+                ctx.rotate(angle + anglePerSegment / 2);
                 ctx.textAlign = "right";
-                ctx.fillStyle = "#f3e5ab";
-                ctx.font = "bold 26px Tahoma, sans-serif";
-                ctx.shadowColor = "#000000";
-                ctx.shadowBlur = 5;
-                ctx.fillText(rewards[i], radius - 30, 8);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 16px Arial";
+                ctx.fillText(segments[i].label, 140, 5);
                 ctx.restore();
             }
         }
-
         drawWheel();
 
         function getAuthHeaders() {
@@ -247,121 +227,106 @@
             if (tg && tg.initData) {
                 headers['X-Telegram-Init-Data'] = tg.initData;
             }
-            const userId = getTelegramUserId();
-            if (userId) {
-                headers['X-Telegram-User-Id'] = userId;
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                headers['X-Telegram-User-Id'] = tg.initDataUnsafe.user.id;
             }
             return headers;
         }
 
-        async function loadUserData(retries = 5) {
-            const userId = getTelegramUserId();
-            if (!userId && retries > 0) {
-                setTimeout(() => loadUserData(retries - 1), 300);
-                return;
-            }
+        function showAlert(msg, isError = false) {
+            const el = document.getElementById('alert');
+            el.innerText = msg;
+            el.style.background = isError ? '#e74c3c' : '#27ae60';
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+
+        async function fetchAccountData() {
             try {
-                // إرسال المعرف بكل الطرق الممكنة لضمان التوافق مع Backend
-                const res = await fetch(`/api/user/account?user_id=${userId || ''}&telegram_id=${userId || ''}`, {
+                let url = '/api/user/account';
+                if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                    url += '?telegram_id=' + tg.initDataUnsafe.user.id;
+                }
+
+                const res = await fetch(url, {
+                    method: 'GET',
                     headers: getAuthHeaders()
                 });
-                const data = await res.json();
-                if (data && !data.error) {
-                    const bal = data.site_balance !== undefined ? data.site_balance : (data.balance !== undefined ? data.balance : 0);
-                    const spins = data.free_spins !== undefined ? data.free_spins : (data.spins !== undefined ? data.spins : (data.freeSpins !== undefined ? data.freeSpins : 0));
 
-                    document.getElementById('site-bal').innerText = Number(bal).toFixed(2);
+                const data = await res.json();
+                if (res.ok) {
+                    const spins = data.free_spins !== undefined ? data.free_spins : (data.spins || 0);
+                    const bal = data.site_balance !== undefined ? data.site_balance : (data.balance || 0.0);
+                    
                     document.getElementById('free-spins').innerText = spins;
-                    document.getElementById('resultMsg').innerText = "";
-                    document.getElementById('resultMsg').style.background = "transparent";
-                } else if (data.error) {
-                    showError(data.error);
+                    document.getElementById('site-balance').innerText = parseFloat(bal).toFixed(2);
+                } else {
+                    console.log("Account fetch notice:", data.error);
                 }
-            } catch (e) { 
-                console.error("خطأ في الاتصال بالبيانات:", e); 
+            } catch (err) {
+                console.error("Fetch error:", err);
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadUserData();
-        });
-
-        function showError(msgText) {
-            const msg = document.getElementById('resultMsg');
-            msg.innerText = msgText;
-            msg.style.background = "rgba(204, 0, 0, 0.25)";
-            msg.style.color = "#ff6b6b";
-            msg.style.border = "1px solid #cc0000";
-        }
+        let isSpinning = false;
+        let currentRotation = 0;
 
         async function spinWheel() {
             if (isSpinning) return;
-            const btn = document.getElementById('spinBtn');
-            const msg = document.getElementById('resultMsg');
-            const userId = getTelegramUserId();
-            
-            btn.disabled = true;
-            isSpinning = true;
-            msg.innerText = "جاري تدوير العجلة...";
-            msg.style.background = "rgba(255, 255, 255, 0.1)";
-            msg.style.color = "#ffffff";
-            msg.style.border = "none";
+            const spinBtn = document.getElementById('spin-btn');
+            spinBtn.disabled = true;
 
             try {
-                const res = await fetch('/api/wheel/spin', {
+                let url = '/api/wheel/spin';
+                const bodyData = {};
+                if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                    bodyData.telegram_id = tg.initDataUnsafe.user.id;
+                }
+
+                const res = await fetch(url, {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ user_id: userId, telegram_id: userId })
+                    body: JSON.stringify(bodyData)
                 });
+
                 const data = await res.json();
 
-                if (data.error) {
-                    showError(data.error);
-                    btn.disabled = false;
-                    isSpinning = false;
+                if (!res.ok) {
+                    showAlert(data.error || 'حدث خطأ أثناء التدوير', true);
+                    spinBtn.disabled = false;
                     return;
                 }
 
-                const targetReward = data.reward;
-                const index = rewards.indexOf(targetReward);
+                isSpinning = true;
+                const reward = data.reward;
                 
-                const sectorDegrees = 360 / numSectors;
-                const targetAngle = 360 - (index * sectorDegrees) - (sectorDegrees / 2);
-                const extraRounds = 360 * 6;
-                
-                const finalRotation = currentRotation + extraRounds + (targetAngle - (currentRotation % 360));
+                let rewardIndex = segments.findIndex(s => parseInt(s.label) === reward);
+                if (rewardIndex === -1) rewardIndex = 0;
+
+                const segmentAngleDeg = 360 / numSegments;
+                const targetAngleDeg = 360 - (rewardIndex * segmentAngleDeg) - (segmentAngleDeg / 2);
+                const extraRounds = 360 * 5;
+                const finalRotation = currentRotation + extraRounds + (targetAngleDeg - (currentRotation % 360));
+
+                canvas.style.transform = `rotate(${finalRotation}deg)`;
                 currentRotation = finalRotation;
-                
-                canvas.style.transform = `rotate(${currentRotation - 90}deg)`;
 
                 setTimeout(() => {
-                    msg.innerText = data.message;
-                    if (targetReward > 0) {
-                        msg.style.background = "rgba(212, 175, 55, 0.2)";
-                        msg.style.color = "#d4af37";
-                        msg.style.border = "1px solid #d4af37";
-                    } else {
-                        msg.style.background = "rgba(255, 255, 255, 0.05)";
-                        msg.style.color = "#aaaaaa";
-                        msg.style.border = "none";
-                    }
-
-                    const newBal = data.new_site_balance !== undefined ? data.new_site_balance : (data.site_balance !== undefined ? data.site_balance : 0);
-                    const spinsLeft = data.free_spins_left !== undefined ? data.free_spins_left : (data.free_spins !== undefined ? data.free_spins : (data.spins !== undefined ? data.spins : 0));
-
-                    document.getElementById('site-bal').innerText = Number(newBal).toFixed(2);
-                    document.getElementById('free-spins').innerText = spinsLeft;
-                    
                     isSpinning = false;
-                    btn.disabled = false;
-                }, 5000);
+                    spinBtn.disabled = false;
+                    showAlert(data.message);
+                    
+                    document.getElementById('site-balance').innerText = parseFloat(data.new_site_balance).toFixed(2);
+                    document.getElementById('free-spins').innerText = data.free_spins_left;
+                }, 4000);
 
             } catch (err) {
-                showError("حدث خطأ في الاتصال بالسيرفر");
-                btn.disabled = false;
-                isSpinning = false;
+                showAlert('فشل الاتصال بالسيرفر', true);
+                spinBtn.disabled = false;
             }
         }
+
+        window.onload = fetchAccountData;
     </script>
 </body>
 </html>
