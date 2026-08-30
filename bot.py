@@ -44,7 +44,7 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
         .info-item { display: flex; flex-direction: column; }
         .info-item span.label { font-size: 12px; color: #888; }
         .info-item span.val { font-size: 18px; font-weight: bold; color: #d4af37; }
-        #result-modal { margin-top: 15px; font-size: 18px; font-weight: bold; min-height: 25px; }
+        #result-modal { margin-top: 15px; font-size: 16px; font-weight: bold; min-height: 25px; color: #e74c3c; }
     </style>
 </head>
 <body>
@@ -73,7 +73,13 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
     <script>
         const tg = window.Telegram ? window.Telegram.WebApp : null;
         if(tg) tg.expand();
-        const userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : new URLSearchParams(window.location.search).get("user_id");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        let userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : null;
+        if (!userId) {
+            userId = urlParams.get("telegram_id") || urlParams.get("user_id");
+        }
+        if (userId === "null" || userId === "undefined") userId = null;
 
         const values = [0, 5, 10, 15, 25, 50, 100, 500, 10000];
         const numSlices = values.length;
@@ -113,15 +119,23 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
         }
 
         async function fetchUserData() {
-            if(!userId) return;
+            if(!userId) {
+                document.getElementById("result-modal").innerText = "⚠️ تعذر التعرف على حسابك، افتح العجلة من داخل البوت مباشرة.";
+                return;
+            }
             try {
-                const res = await fetch('/api/user_info?user_id=' + userId);
+                const res = await fetch('/api/user_info?telegram_id=' + userId + '&user_id=' + userId);
                 const data = await res.json();
                 if(data.status === 'ok') {
                     document.getElementById("spinsCount").innerText = data.spins;
                     document.getElementById("userBal").innerText = data.balance.toFixed(2) + " NSP";
+                    document.getElementById("result-modal").innerText = "";
+                } else {
+                    document.getElementById("result-modal").innerText = "❌ " + (data.message || "خطأ في جلب البيانات");
                 }
-            } catch(e) {}
+            } catch(e) {
+                document.getElementById("result-modal").innerText = "❌ تعذر الاتصال بالسيرفر";
+            }
         }
 
         async function startSpin() {
@@ -134,7 +148,7 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 const res = await fetch('/api/spin', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user_id: userId })
+                    body: JSON.stringify({ telegram_id: userId, user_id: userId })
                 });
                 const data = await res.json();
 
@@ -190,6 +204,7 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
             } catch(e) {
                 isSpinning = false;
                 document.getElementById("spinBtn").disabled = false;
+                document.getElementById("result-modal").innerText = "❌ حدث خطأ في الاتصال بالشبكة";
             }
         }
 
@@ -216,22 +231,22 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.wfile.write(HTML_WHEEL_PAGE.encode('utf-8'))
         elif parsed_path.path == "/api/user_info":
             qs = parse_qs(parsed_path.query)
-            user_id = qs.get('user_id', [None])[0]
-            if user_id and user_id.isdigit():
+            user_id_raw = qs.get('telegram_id', [None])[0] or qs.get('user_id', [None])[0]
+            
+            if user_id_raw and str(user_id_raw).isdigit():
+                user_id = int(user_id_raw)
                 conn = get_db()
-                u = conn.execute("SELECT spins_count, balance FROM users WHERE telegram_id = ?", (int(user_id),)).fetchone()
+                u = conn.execute("SELECT spins_count, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
                 conn.close()
                 if u:
                     res = {"status": "ok", "spins": u['spins_count'], "balance": u['balance']}
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(res).encode('utf-8'))
+                    self._send_json(res)
                     return
-            self.send_response(400)
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
+                else:
+                    self._send_json({"status": "error", "message": "المستخدم غير موجود بالنظام"})
+                    return
+            self._send_json({"status": "error", "message": "معرف المستخدم غير صالح"})
+            
         elif parsed_path.path == "/api/users":
             auth_header = self.headers.get('X-Admin-Token')
             admin_token = os.environ.get("ADMIN_API_TOKEN", "INTERNAL_SECURE_TOKEN")
@@ -244,11 +259,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             users = conn.execute("SELECT telegram_id, site_username, site_balance FROM users WHERE site_username IS NOT NULL").fetchall()
             conn.close()
             data = [dict(u) for u in users]
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            self._send_json(data)
         else:
             self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -271,7 +282,13 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                user_id = int(data.get('user_id'))
+                user_id_raw = data.get('telegram_id') or data.get('user_id')
+                
+                if not user_id_raw or not str(user_id_raw).isdigit():
+                    self._send_json({"status": "error", "message": "معرف المستخدم غير صحيح!"})
+                    return
+
+                user_id = int(user_id_raw)
                 
                 conn = get_db()
                 cursor = conn.cursor()
@@ -720,7 +737,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"──────────────────"
     )
 
-    wheel_url = f"{SERVER_URL}/wheel?user_id={user_id}"
+    wheel_url = f"{SERVER_URL}/wheel?telegram_id={user_id}&user_id={user_id}"
     
     try:
         aurex_btn = InlineKeyboardButton("🌐 AUREX", web_app=WebAppInfo(url=SERVER_URL))
@@ -1560,7 +1577,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'ADM_WAIT_SPINS_USER_ID':
-            u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE telegram_id = ? OR site_username = ?", (text, text)).fetchone()
+            if text.isdigit():
+                u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE telegram_id = ? OR site_username = ?", (int(text), text)).fetchone()
+            else:
+                u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE site_username = ?", (text,)).fetchone()
+
             if not u:
                 await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
                 conn.close()
@@ -1589,7 +1610,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'ADM_WAIT_ADD_BAL_ID':
-            u = cursor.execute("SELECT telegram_id, site_username FROM users WHERE telegram_id = ? OR site_username = ?", (text, text)).fetchone()
+            if text.isdigit():
+                u = cursor.execute("SELECT telegram_id, site_username FROM users WHERE telegram_id = ? OR site_username = ?", (int(text), text)).fetchone()
+            else:
+                u = cursor.execute("SELECT telegram_id, site_username FROM users WHERE site_username = ?", (text,)).fetchone()
+
             if not u:
                 await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
                 conn.close()
@@ -1759,7 +1784,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'ADM_WAIT_USER_DETAILS':
-            u = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR site_username = ?", (text, text)).fetchone()
+            if text.isdigit():
+                u = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR site_username = ?", (int(text), text)).fetchone()
+            else:
+                u = cursor.execute("SELECT * FROM users WHERE site_username = ?", (text,)).fetchone()
+
             conn.close()
             if not u:
                 await update.message.reply_text("❌ العميل غير موجود!")
