@@ -799,7 +799,7 @@ def admin_get_settings():
             res[r['key']] = r['value']
     return jsonify(res)
 
-# --- تشغيل ملف البوت تلقائياً في الخلفية (متوافق مع Render) ---
+# --- دالة تشغيل البوت تلقائياً عند بدء الخادم ---
 def launch_bot():
     if os.environ.get("BOT_LAUNCHED") != "true":
         os.environ["BOT_LAUNCHED"] = "true"
@@ -809,8 +809,7 @@ def launch_bot():
         except Exception as e:
             print(f"خطأ في تشغيل البوت: {e}")
 
-launch_bot()
-
 if __name__ == '__main__':
+    launch_bot()  # تشغيل البوت آلياً مع تطبيق الفلاسك عند البدء
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, threaded=True)
