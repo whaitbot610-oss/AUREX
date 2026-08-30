@@ -165,10 +165,10 @@
     <div class="stats-card">
         <div class="stat-item">
             رصيد الحساب
-            <div class="stat-val" id="site-bal">0.0</div>
+            <div class="stat-val" id="site-bal">0.00</div>
         </div>
         <div class="stat-item">
-            اللفة المجانية
+            اللفات المجانية
             <div class="stat-val" id="free-spins">0</div>
         </div>
     </div>
@@ -181,7 +181,7 @@
         <div class="center-cap">AUREX</div>
     </div>
 
-    <button id="spinBtn" class="spin-btn" onclick="spinWheel()">در العجلة الآن 🎲</button>
+    <button id="spinBtn" class="spin-btn" onclick="spinWheel()">أدر العجلة الآن 🎲</button>
 
     <div id="resultMsg" class="result-card"></div>
 
@@ -192,13 +192,13 @@
             tg.expand();
         }
 
-        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456 أو id=123456)
+        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456 أو id=123456 أو telegram_id=123456)
         function getTelegramUserId() {
             if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
                 return tg.initDataUnsafe.user.id;
             }
             const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('user_id') || urlParams.get('id') || urlParams.get('telegram_id');
+            return urlParams.get('telegram_id') || urlParams.get('user_id') || urlParams.get('id');
         }
 
         const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
@@ -261,21 +261,24 @@
                 return;
             }
             try {
-                // إرسال user_id مباشرة كـ Query Parameter
-                const res = await fetch(`/api/user/account?user_id=${userId || ''}`, {
+                // إرسال المعرف بكل الطرق الممكنة لضمان التوافق مع Backend
+                const res = await fetch(`/api/user/account?user_id=${userId || ''}&telegram_id=${userId || ''}`, {
                     headers: getAuthHeaders()
                 });
                 const data = await res.json();
                 if (data && !data.error) {
-                    document.getElementById('site-bal').innerText = Number(data.site_balance || 0).toFixed(2);
-                    document.getElementById('free-spins').innerText = data.free_spins || 0;
+                    const bal = data.site_balance !== undefined ? data.site_balance : (data.balance !== undefined ? data.balance : 0);
+                    const spins = data.free_spins !== undefined ? data.free_spins : (data.spins !== undefined ? data.spins : (data.freeSpins !== undefined ? data.freeSpins : 0));
+
+                    document.getElementById('site-bal').innerText = Number(bal).toFixed(2);
+                    document.getElementById('free-spins').innerText = spins;
                     document.getElementById('resultMsg').innerText = "";
                     document.getElementById('resultMsg').style.background = "transparent";
                 } else if (data.error) {
                     showError(data.error);
                 }
             } catch (e) { 
-                console.error(e); 
+                console.error("خطأ في الاتصال بالبيانات:", e); 
             }
         }
 
@@ -308,7 +311,7 @@
                 const res = await fetch('/api/wheel/spin', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ user_id: userId })
+                    body: JSON.stringify({ user_id: userId, telegram_id: userId })
                 });
                 const data = await res.json();
 
@@ -343,8 +346,11 @@
                         msg.style.border = "none";
                     }
 
-                    document.getElementById('site-bal').innerText = Number(data.new_site_balance || 0).toFixed(2);
-                    document.getElementById('free-spins').innerText = data.free_spins_left || 0;
+                    const newBal = data.new_site_balance !== undefined ? data.new_site_balance : (data.site_balance !== undefined ? data.site_balance : 0);
+                    const spinsLeft = data.free_spins_left !== undefined ? data.free_spins_left : (data.free_spins !== undefined ? data.free_spins : (data.spins !== undefined ? data.spins : 0));
+
+                    document.getElementById('site-bal').innerText = Number(newBal).toFixed(2);
+                    document.getElementById('free-spins').innerText = spinsLeft;
                     
                     isSpinning = false;
                     btn.disabled = false;
