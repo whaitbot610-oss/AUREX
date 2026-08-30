@@ -479,8 +479,8 @@ def init_db():
         'is_admin': 'INTEGER DEFAULT 0',
         'is_banned': 'INTEGER DEFAULT 0',
         'code_restricted_until': 'TIMESTAMP',
-        'created_at': 'TIMESTAMP',
-        'last_active': 'TIMESTAMP'
+        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
     }
     for col_name, col_type in required_cols.items():
         if col_name not in existing_cols:
@@ -660,14 +660,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref_txt = f"<code>{ref_by}</code>" if ref_by else "بدون إحالة"
             await send_all_admins(
                 context, 
-                f"👤 <b>عضو جديد انضم للبوت!</b>\n\n• الاسم: {html.escape(user.full_name)}\n• المعرف: @{user.username or 'لا يوجد'}\n• الآيدي: <code>{user.id}</code>\n• الإحالة بواسطة: {ref_txt}"
+                f"👤 <b>عضو جديد انضم للبوت!</b>\n\n• الاسم: {html.escape(user.full_name or '')}\n• المعرف: @{user.username or 'لا يوجد'}\n• الآيدي: <code>{user.id}</code>\n• الإحالة بواسطة: {ref_txt}"
             )
 
         if ref_by:
             cursor.execute("UPDATE users SET referrals_count = referrals_count + 1 WHERE telegram_id = ?", (ref_by,))
             conn.commit()
             try:
-                await context.bot.send_message(ref_by, f"🎉 <b>انضم عميل جديد عبر رابط إحالتك!</b>\n🆔 العميل: <code>{html.escape(user.first_name)}</code>\n📌 سيتم منحك فرصة لعب فورية بمجرد إنشاء هذا العميل لحسابه بالموقع!", parse_mode="HTML")
+                await context.bot.send_message(ref_by, f"🎉 <b>انضم عميل جديد عبر رابط إحالتك!</b>\n🆔 العميل: <code>{html.escape(user.first_name or '')}</code>\n📌 سيتم منحك فرصة لعب فورية بمجرد إنشاء هذا العميل لحسابه بالموقع!", parse_mode="HTML")
             except Exception: pass
             
         db_user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user.id,)).fetchone()
@@ -758,11 +758,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    conn = get_db()
-    cursor = conn.cursor()
-
     if data == "sec_wrong":
-        conn.close()
         keyboard = [
             [InlineKeyboardButton("مابدي البونص", callback_data="sec_no_bonus")],
             [InlineKeyboardButton("لا بدي ارجع لحط حموية", callback_data="sec_back")]
@@ -774,12 +770,12 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "sec_back":
-        conn.close()
         await send_security_question(update)
         return
 
     elif data == "sec_no_bonus":
-        cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = -1 WHERE telegram_id = ?", (user_id,))
+        conn = get_db()
+        conn.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = -1 WHERE telegram_id = ?", (user_id,))
         conn.commit()
         conn.close()
         await query.message.edit_text("تم توثيق حسابك بنجاح دون الحصول على البونص الترحيبي.")
@@ -787,6 +783,8 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "sec_correct":
+        conn = get_db()
+        cursor = conn.cursor()
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         bonus_enabled = get_setting('welcome_bonus_enabled', '1') == '1'
         bonus_amt = float(get_setting('welcome_bonus', '500.0'))
@@ -814,8 +812,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await show_main_menu(update, context)
         return
-
-    conn.close()
 
     if data == "cancel_action":
         context.user_data.clear()
@@ -1807,9 +1803,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users = cursor.execute("SELECT telegram_id FROM users").fetchall()
             conn.close()
             sent, failed = 0, 0
+            safe_text = html.escape(text)
             for u in users:
                 try:
-                    await context.bot.send_message(u['telegram_id'], f"📢 <b>تنويه من الإدارة:</b>\n\n{text}", parse_mode="HTML")
+                    await context.bot.send_message(u['telegram_id'], f"📢 <b>تنويه من الإدارة:</b>\n\n{safe_text}", parse_mode="HTML")
                     sent += 1
                 except Exception:
                     failed += 1
@@ -1827,8 +1824,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == 'ADM_WAIT_PRIV_TXT':
             target = context.user_data.get('priv_target')
+            safe_text = html.escape(text)
             try:
-                await context.bot.send_message(target, f"📩 <b>رسالة خاصة من الإدارة:</b>\n\n{text}", parse_mode="HTML")
+                await context.bot.send_message(target, f"📩 <b>رسالة خاصة من الإدارة:</b>\n\n{safe_text}", parse_mode="HTML")
                 await update.message.reply_text("✅ تم إرسال الرسالة الخاصة بنجاح.")
             except Exception as e:
                 await update.message.reply_text(f"❌ تعذر إرسال الرسالة: {e}")
@@ -1838,8 +1836,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == 'WAIT_ADMIN_REPLY_SUPP':
             target = context.user_data.get('support_target')
+            safe_text = html.escape(text)
             try:
-                await context.bot.send_message(target, f"💬 <b>رد الدعم الفني:</b>\n\n{text}", parse_mode="HTML")
+                await context.bot.send_message(target, f"💬 <b>رد الدعم الفني:</b>\n\n{safe_text}", parse_mode="HTML")
                 await update.message.reply_text("✅ تم إرسال الرد للعميل بنجاح.")
             except Exception as e:
                 await update.message.reply_text(f"❌ تعذر الإرسال: {e}")
@@ -1892,15 +1891,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================================
 # 6. النقطة الرئيسية للتشغيل Main Engine
 # ==========================================================
+async def post_init(application: Application):
+    global MAIN_LOOP
+    MAIN_LOOP = asyncio.get_running_loop()
+
 def main():
-    global bot_app, MAIN_LOOP
+    global bot_app
     init_db()
     
     t = threading.Thread(target=start_health_check_server, daemon=True)
     t.start()
     logging.info("Health check server and WebApp wheel server started successfully.")
 
-    builder = Application.builder().token(BOT_TOKEN)
+    builder = Application.builder().token(BOT_TOKEN).post_init(post_init)
     bot_app = builder.build()
 
     bot_app.add_handler(CommandHandler("start", start))
@@ -1910,7 +1913,6 @@ def main():
 
     logging.info("AUREX bot is running...")
     
-    MAIN_LOOP = asyncio.get_event_loop()
     bot_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
