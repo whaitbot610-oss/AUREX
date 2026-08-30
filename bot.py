@@ -479,8 +479,8 @@ def init_db():
         'is_admin': 'INTEGER DEFAULT 0',
         'is_banned': 'INTEGER DEFAULT 0',
         'code_restricted_until': 'TIMESTAMP',
-        'created_at': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-        'last_active': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        'created_at': 'TIMESTAMP',
+        'last_active': 'TIMESTAMP'
     }
     for col_name, col_type in required_cols.items():
         if col_name not in existing_cols:
