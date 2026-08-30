@@ -192,12 +192,13 @@
             tg.expand();
         }
 
-        // استخراج user_id من التليجرام بكل الطرق المتاحة
+        // استخراج آيدي التليجرام سواء من WebApp أو من الرابط مباشرة (?user_id=123456)
         function getTelegramUserId() {
             if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
                 return tg.initDataUnsafe.user.id;
             }
-            return null;
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('user_id');
         }
 
         const rewards = [0, 5, 10, 15, 25, 50, 100, 500, 1000];
@@ -254,15 +255,16 @@
         }
 
         async function loadUserData() {
+            const userId = getTelegramUserId();
             try {
-                const res = await fetch('/api/user/account', {
-                    headers: getAuthHeaders(),
-                    credentials: 'include'
+                // إرسال user_id مباشرة كـ Query Parameter
+                const res = await fetch(`/api/user/account?user_id=${userId || ''}`, {
+                    headers: getAuthHeaders()
                 });
                 const data = await res.json();
                 if (data && !data.error) {
-                    document.getElementById('site-bal').innerText = Number(data.site_balance).toFixed(2);
-                    document.getElementById('free-spins').innerText = data.free_spins;
+                    document.getElementById('site-bal').innerText = Number(data.site_balance || 0).toFixed(2);
+                    document.getElementById('free-spins').innerText = data.free_spins || 0;
                     document.getElementById('resultMsg').innerText = "";
                     document.getElementById('resultMsg').style.background = "transparent";
                 } else if (data.error) {
@@ -286,6 +288,7 @@
             if (isSpinning) return;
             const btn = document.getElementById('spinBtn');
             const msg = document.getElementById('resultMsg');
+            const userId = getTelegramUserId();
             
             btn.disabled = true;
             isSpinning = true;
@@ -298,7 +301,7 @@
                 const res = await fetch('/api/wheel/spin', {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    credentials: 'include'
+                    body: JSON.stringify({ user_id: userId })
                 });
                 const data = await res.json();
 
@@ -333,8 +336,8 @@
                         msg.style.border = "none";
                     }
 
-                    document.getElementById('site-bal').innerText = Number(data.new_site_balance).toFixed(2);
-                    document.getElementById('free-spins').innerText = data.free_spins_left;
+                    document.getElementById('site-bal').innerText = Number(data.new_site_balance || 0).toFixed(2);
+                    document.getElementById('free-spins').innerText = data.free_spins_left || 0;
                     
                     isSpinning = false;
                     btn.disabled = false;
