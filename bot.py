@@ -285,9 +285,11 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 const res = await fetch('/api/get-spins?telegram_id=' + userId);
                 const data = await res.json();
                 if (data.status === 'success' || data.free_spins !== undefined) {
-                    document.getElementById("spinsCount").innerText = data.free_spins || 0;
-                    document.getElementById("userBal").innerText = (data.bot_balance || 0).toFixed(2) + " NSP";
+                    document.getElementById("spinsCount").innerText = data.free_spins ?? data.spins ?? 0;
+                    document.getElementById("userBal").innerText = (data.bot_balance ?? data.balance ?? 0).toFixed(2) + " NSP";
                     document.getElementById("result-modal").innerText = "";
+                } else {
+                    document.getElementById("result-modal").innerText = "❌ " + (data.error || "المستخدم غير موجود");
                 }
             } catch (e) {
                 document.getElementById("result-modal").innerText = "❌ تعذر الاتصال بالسيرفر";
@@ -308,8 +310,8 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 });
                 const data = await res.json();
 
-                if (data.status !== 'success' && !data.prize_index && data.prize_index !== 0) {
-                    document.getElementById("result-modal").innerHTML = `<span class="lose-msg">❌ ${data.error || "عذراً، حدث خطأ!"}</span>`;
+                if (data.status !== 'success' && data.prize_index === undefined) {
+                    document.getElementById("result-modal").innerHTML = `<span class="lose-msg">❌ ${data.error || data.message || "عذراً، حدث خطأ!"}</span>`;
                     isSpinning = false;
                     document.getElementById("spinBtn").disabled = false;
                     return;
@@ -345,8 +347,8 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                         drawWheel();
                         isSpinning = false;
                         document.getElementById("spinBtn").disabled = false;
-                        document.getElementById("spinsCount").innerText = data.free_spins_left;
-                        document.getElementById("userBal").innerText = (data.new_bot_balance || 0).toFixed(2) + " NSP";
+                        document.getElementById("spinsCount").innerText = data.free_spins_left ?? data.remaining_spins ?? 0;
+                        document.getElementById("userBal").innerText = (data.new_bot_balance ?? data.new_balance ?? 0).toFixed(2) + " NSP";
 
                         if (data.reward > 0) {
                             document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
@@ -372,6 +374,13 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
 """
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token, X-Telegram-User-Id')
+        self.end_headers()
+
     def do_HEAD(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -385,6 +394,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(HTML_WHEEL_PAGE.encode('utf-8'))
+            
         elif parsed_path.path in ["/api/get-spins", "/api/user_info"]:
             qs = parse_qs(parsed_path.query)
             user_id_raw = qs.get('telegram_id', [None])[0] or qs.get('user_id', [None])[0]
@@ -523,6 +533,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token')
         self.end_headers()
         self.wfile.write(json.dumps(data_dict).encode('utf-8'))
 
@@ -611,7 +623,8 @@ async def register_account_to_site_api_async(username, password, telegram_id):
 # 2. إدارة قاعدة البيانات
 # ==========================================================
 def get_db():
-    conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -1171,7 +1184,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         row = []
         for v in WHEEL_VALUES:
             w_val = w_dict.get(str(v), 10)
-            txt += f"• الجائزة <b>{v} NSP</b> 👈 الوزن النسبى: <code>{w_val}</code>\n"
+            txt += f"• الجائزة <b>{v} NSP</b> 👈 الوزن النسبي: <code>{w_val}</code>\n"
             row.append(InlineKeyboardButton(f"✏️ {v} NSP", callback_data=f"adm_sw_{v}"))
             if len(row) == 3:
                 btns.append(row)
