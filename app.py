@@ -25,27 +25,30 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 30
 # توحيد مسار قاعدة البيانات
 DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
 
-# --- دالة إرسال إشعار تلغرام إلى الأدمن ---
-def send_telegram_admin_notify(message):
-    bot_token = os.environ.get("BOT_TOKEN")
-    admin_id = os.environ.get("MAIN_ADMIN_ID")
-    if not bot_token or not admin_id:
+# --- دالة إرسال إشعار تلغرام إلى الأدمن والمستخدم ---
+def send_telegram_notify(chat_id, message):
+    bot_token = os.environ.get("BOT_TOKEN", "8948439052:AAHv-UWeTMQmHybxspFRVRpnjIqetmW8LbI")
+    if not bot_token or not chat_id:
         return
     
     def _send():
         try:
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
             payload = urllib.parse.urlencode({
-                "chat_id": admin_id,
+                "chat_id": chat_id,
                 "text": message,
                 "parse_mode": "HTML"
             }).encode("utf-8")
             req = urllib.request.Request(url, data=payload)
             urllib.request.urlopen(req, timeout=5)
         except Exception as e:
-            print(f"Failed to send admin notification: {e}", flush=True)
+            print(f"Failed to send telegram notification to {chat_id}: {e}", flush=True)
 
     threading.Thread(target=_send, daemon=True).start()
+
+def send_telegram_admin_notify(message):
+    admin_id = os.environ.get("MAIN_ADMIN_ID", "7255100997")
+    send_telegram_notify(admin_id, message)
 
 # --- معالجة CORS والاتصال المستقل ---
 @app.after_request
@@ -70,7 +73,7 @@ def get_db_connection():
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
-# --- تهيئة قاعدة البيانات ---
+# --- تهيئة وتوحيد قاعدة البيانات ---
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -81,12 +84,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bot_name TEXT NOT NULL,
             bot_token TEXT UNIQUE,
-            cashier_balance REAL DEFAULT 0.0,
+            cashier_balance REAL DEFAULT 10000.0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # 2. جدول المستخدمين
+    # 2. جدول المستخدمين الموحد
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
@@ -105,10 +108,14 @@ def init_db():
             got_welcome_bonus INTEGER DEFAULT 0,
             security_passed INTEGER DEFAULT 0,
             is_admin INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            is_banned INTEGER DEFAULT 0,
+            code_restricted_until TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
+    # التأكد من التوافق والترحيل إذا كانت القاعدة تحتوي أسماء أعمدة قديمة
     user_columns = [
         ("site_username", "TEXT UNIQUE"),
         ("site_password", "TEXT"),
@@ -122,7 +129,8 @@ def init_db():
         ("referred_by", "INTEGER"),
         ("got_welcome_bonus", "INTEGER DEFAULT 0"),
         ("security_passed", "INTEGER DEFAULT 0"),
-        ("is_admin", "INTEGER DEFAULT 0")
+        ("is_admin", "INTEGER DEFAULT 0"),
+        ("is_banned", "INTEGER DEFAULT 0")
     ]
 
     for col_name, col_type in user_columns:
@@ -130,6 +138,16 @@ def init_db():
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
             pass
+
+    # دمج البيانات من العملاء في حال وجود عمود قديم balance أو spins_count
+    try:
+        cursor.execute("UPDATE users SET bot_balance = balance WHERE bot_balance = 0.0 AND balance > 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("UPDATE users SET free_spins = spins_count WHERE free_spins = 0 AND spins_count > 0")
+    except sqlite3.OperationalError:
+        pass
 
     # 3. جدول المعاملات المالية
     cursor.execute('''
@@ -146,7 +164,7 @@ def init_db():
         )
     ''')
 
-    # 4. جدول الأكواد
+    # 4. جدول الأكواد الموحد
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gift_codes (
             code TEXT PRIMARY KEY,
@@ -158,6 +176,10 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    try:
+        cursor.execute("ALTER TABLE gift_codes ADD COLUMN active INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
 
     # 5. سجل الأكواد المستخدمة
     cursor.execute('''
@@ -178,22 +200,24 @@ def init_db():
     ''')
     
     default_wheel_probs = {
-        "0": 55.0,
+        "0": 50.0,
         "5": 20.0,
         "10": 12.0,
-        "15": 7.0,
-        "25": 3.5,
-        "50": 1.5,
-        "100": 0.8,
-        "500": 0.15,
-        "1000": 0.05
+        "15": 8.0,
+        "25": 5.0,
+        "50": 3.0,
+        "100": 1.5,
+        "500": 0.4,
+        "10000": 0.1
     }
 
     defaults = [
         ('maintenance', 'off'),
         ('welcome_bonus', '10.0'),
+        ('welcome_bonus_enabled', '1'),
         ('referral_bonus', '1'),
         ('rtp_rate', '30.0'),
+        ('cashier_balance', '10000.0'),
         ('wheel_probabilities', json.dumps(default_wheel_probs))
     ]
     for key, val in defaults:
@@ -208,7 +232,7 @@ def init_db():
         cursor.execute('''
             INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, is_admin)
             VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
-        ''', (999999, 'Admin', 'Admin', 'Admin096'))
+        ''', (7255100997, 'Admin', 'Admin', 'Admin096'))
 
     conn.commit()
     conn.close()
@@ -232,12 +256,18 @@ def get_req_data():
 def get_bot_cashier(cursor, bot_id=1):
     cursor.execute("SELECT cashier_balance FROM bots WHERE id = ?", (bot_id,))
     row = cursor.fetchone()
-    return float(row['cashier_balance']) if row and row['cashier_balance'] is not None else 0.0
+    if row and row['cashier_balance'] is not None:
+        return float(row['cashier_balance'])
+    
+    cursor.execute("SELECT value FROM settings WHERE key = 'cashier_balance'")
+    s_row = cursor.fetchone()
+    return float(s_row['value']) if s_row else 0.0
 
 def update_bot_cashier(cursor, amount_change, bot_id=1):
     old_balance = get_bot_cashier(cursor, bot_id)
     new_balance = max(0.0, old_balance + amount_change)
     cursor.execute("UPDATE bots SET cashier_balance = ? WHERE id = ?", (new_balance, bot_id))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('cashier_balance', ?)", (str(new_balance),))
     return old_balance, new_balance
 
 def get_setting(cursor, key, default="0"):
@@ -342,7 +372,7 @@ def check_maintenance():
         cursor = conn.cursor()
         m = get_setting(cursor, 'maintenance', 'off')
         conn.close()
-        if m == 'on':
+        if m == 'on' or m == '1':
             return jsonify({'error': 'الموقع في وضع الصيانة حالياً'}), 533
 
 # --- الصفحات ---
@@ -503,6 +533,11 @@ def register_site():
                         SET referrals_count = COALESCE(referrals_count, 0) + 1, free_spins = COALESCE(free_spins, 0) + 1 
                         WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?
                     ''', (ref_id, str(ref_id)))
+                    
+                    send_telegram_notify(
+                        ref_id,
+                        f"🎉 <b>تم منحك لفة مجانية جديدة!</b>\nقام المستخدم <code>{site_user}</code> بإنشاء حساب عن طريق رابط إحالتك."
+                    )
                 except (ValueError, TypeError):
                     pass
 
@@ -713,7 +748,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# عجلة الحظ
+# عجلة الحظ (AUREX Lucky Wheel)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -753,7 +788,7 @@ def wheel_spin():
     try:
         probs = json.loads(probs_str)
     except Exception:
-        probs = {"0": 55.0, "5": 20.0, "10": 12.0, "15": 7.0, "25": 3.5, "50": 1.5, "100": 0.8, "500": 0.15, "1000": 0.05}
+        probs = {"0": 50.0, "5": 20.0, "10": 12.0, "15": 8.0, "25": 5.0, "50": 3.0, "100": 1.5, "500": 0.4, "10000": 0.1}
 
     numbers = [int(k) for k in probs.keys()]
     weights = [float(v) for v in probs.values()]
@@ -761,30 +796,42 @@ def wheel_spin():
     chosen_reward = random.choices(numbers, weights=weights, k=1)[0]
 
     bot_id = user['bot_id'] or 1
-    cashier = get_bot_cashier(cursor, bot_id)
+    cashier_before, cashier_after = get_bot_cashier(cursor, bot_id), get_bot_cashier(cursor, bot_id)
 
-    if chosen_reward > cashier:
+    if chosen_reward > cashier_before:
         chosen_reward = 0
 
-    msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} تم إضافتها لرصيد البوت"
+    msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} NSP تم إضافتها لرصيد البوت"
 
     if chosen_reward > 0:
         cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
-        update_bot_cashier(cursor, -chosen_reward, bot_id)
+        cashier_before, cashier_after = update_bot_cashier(cursor, -chosen_reward, bot_id)
 
         user_name_str = user['site_username'] or user['username'] or str(user_id)
-        notify_msg = (f"🎡 <b>فوز جديد في عجلة البوت!</b>\n"
-                      f"👤 المستخدم: {user_name_str} (ID: <code>{user_id}</code>)\n"
-                      f"🎁 الجائزة: <b>{chosen_reward}</b> نقطة/رصيد\n"
-                      f"🎰 نوع اللفة: {'مجانية' if is_free_spin else 'مدفوعة من رصيد البوت'}")
-        send_telegram_admin_notify(notify_msg)
+        
+        # إرسال إشعار للمستخدم
+        user_notify_msg = (f"🎡 <b>إشعار فوز في عجلة AUREX!</b>\n\n"
+                           f"🎉 مبروك! لقد فزت بـ <b>{chosen_reward} NSP</b> تم إضافتها إلى محفظة البوت الخاصة بك مباشرة.")
+        send_telegram_notify(user_id, user_notify_msg)
+
+        # إرسال إشعار للمدير (الأدمن)
+        admin_notify_msg = (f"🎰 <b>خصم كاشيرة (فوز بعجلة الحظ):</b>\n"
+                            f"👤 المستخدم: {user_name_str} (ID: <code>{user_id}</code>)\n"
+                            f"🎁 الجائزة: <b>{chosen_reward} NSP</b>\n"
+                            f"🎰 نوع اللفة: {'مجانية' if is_free_spin else 'مدفوعة من رصيد البوت'}\n"
+                            f"🏦 الكاشيرة قبل: <code>{cashier_before:.2f} NSP</code>\n"
+                            f"🏦 الكاشيرة بعد: <code>{cashier_after:.2f} NSP</code>")
+        send_telegram_admin_notify(admin_notify_msg)
 
     conn.commit()
     updated_user = cursor.execute("SELECT bot_balance, site_balance, free_spins FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
     conn.close()
 
+    prize_index = numbers.index(chosen_reward) if chosen_reward in numbers else 0
+
     return jsonify({
         'status': 'success',
+        'prize_index': prize_index,
         'reward': chosen_reward,
         'message': msg,
         'is_free_spin': is_free_spin,
@@ -876,7 +923,7 @@ def use_code():
         
         if not code_obj:
             conn.close()
-            return jsonify({'error': 'الكود غير صالح أو غير موجود أو ملغى'}), 400
+            return jsonify({'error': 'الكود غير صالح أو غير موجود أو تم إلغاؤه'}), 400
 
         used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
         max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
@@ -987,7 +1034,7 @@ def admin_deactivate_code():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم إلغاء الكود {code_text} وإعادة {refund_amount}$ غير مستخدمة إلى حساب الكاشيرة'
+        'message': f'تم إلغاء الكود {code_text} بنجاح وإعادة {refund_amount}$ غير مستخدمة إلى كاشيرة البوت'
     })
 
 # ==================== لوحة التحكم والطلب وإدارة الكاشيرة ====================
