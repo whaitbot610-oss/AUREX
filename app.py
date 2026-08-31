@@ -21,7 +21,7 @@ app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 30
 
-# توحيد مسار قاعدة البيانات لتفادي إنشائها في مسارات مختلفة على Render
+# توحيد مسار قاعدة البيانات
 DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
 
 # --- دالة إرسال إشعار تلغرام إلى الأدمن ---
@@ -246,7 +246,6 @@ def set_setting(cursor, key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 def get_authenticated_user_id():
-    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو الرابط (Referer) أو بيانات التلجرام المشفّرة (initData)"""
     user_id = session.get('user_id')
     data = get_req_data()
     
@@ -426,7 +425,6 @@ def get_user_account():
     res['bot_balance'] = res['bot_balance'] if res['bot_balance'] is not None else 0.0
     return jsonify(res)
 
-# مسارات متوافقة مع واجهة العجلة للحصول على اللفات المتاحة ورصيد البوت
 @app.route('/api/get-spins', methods=['GET', 'POST'])
 @app.route('/api/wheel/status', methods=['GET', 'POST'])
 def get_spins_status():
@@ -544,7 +542,7 @@ def claim_welcome_bonus():
 
     if user['got_welcome_bonus'] == 1:
         conn.close()
-        return jsonify({'error': 'لقد حصلت على البونص الترحيبي سابقاً'}), 400
+        return jsonify({'error': 'لقدحصلت على البونص الترحيبي سابقاً'}), 400
 
     try:
         bonus_amount = float(get_setting(cursor, 'welcome_bonus', '10.0'))
@@ -642,7 +640,7 @@ def transfer_to_bot():
     new_bot_bal = (user['bot_balance'] or 0.0) + amount
 
     cursor.execute("UPDATE users SET bot_balance = ?, site_balance = ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?",
-                   (new_site_bal, new_bot_bal, telegram_id, str(telegram_id)))
+                   (new_bot_bal, new_site_bal, telegram_id, str(telegram_id)))
     conn.commit()
     conn.close()
 
@@ -712,7 +710,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. عجلة الحظ (تعتمد حصرياً على لفات ورصيد البوت، وتضيف الأرباح للبوت وتخصم من الكاشيرة وتُرسل إشعاراً)
+# عجلة الحظ (تعمل عبر البوت، تُخصم من لفات/رصيد البوت وتُضيف لرصيد البوت وتُخصم من الكاشيرة)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -737,7 +735,6 @@ def wheel_spin():
     is_free_spin = False
     spin_cost = 10.0
 
-    # 1. الخصم والاعتماد حصرياً على لفات البوت ثم رصيد البوت فقط (تم فصل رصيد الموقع تماماً)
     if current_free_spins > 0:
         is_free_spin = True
         cursor.execute("UPDATE users SET free_spins = MAX(0, free_spins - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
@@ -749,7 +746,6 @@ def wheel_spin():
             conn.close()
             return jsonify({'error': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة'}), 400
 
-    # 2. حساب احتمالات الفوز
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
         probs = json.loads(probs_str)
@@ -764,18 +760,15 @@ def wheel_spin():
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
-    # إلغاء الجائزة إذا كانت كاشيرة البوت لا تكفي
     if chosen_reward > cashier:
         chosen_reward = 0
 
     msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} تم إضافتها لرصيد البوت"
 
-    # 3. إضافة الجائزة لرصيد البوت المباشر والخصم من كاشيرة البوت وإرسال إشعار
     if chosen_reward > 0:
         cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
         update_bot_cashier(cursor, -chosen_reward, bot_id)
 
-        # إرسال إشعار فوري لتلغرام الأدمن
         user_name_str = user['site_username'] or user['username'] or str(user_id)
         notify_msg = (f"🎡 <b>فوز جديد في عجلة البوت!</b>\n"
                       f"👤 المستخدم: {user_name_str} (ID: <code>{user_id}</code>)\n"
@@ -802,7 +795,7 @@ def wheel_spin():
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
     data = get_req_data()
-    code = str(data.get('code', '')).strip()
+    code = str(data.get('code', '')).strip().upper()
     try:
         amount = float(data.get('amount', 0))
         max_uses = int(data.get('max_uses', 1))
@@ -851,7 +844,7 @@ def create_code():
 def use_code():
     data = get_req_data()
     telegram_id = get_authenticated_user_id() or data.get('telegram_id') or data.get('user_id')
-    code_text = str(data.get('code', '')).strip()
+    code_text = str(data.get('code', '')).strip().upper()
 
     if not telegram_id:
         return jsonify({'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 400
@@ -875,12 +868,12 @@ def use_code():
         conn.commit()
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
 
-    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE LOWER(code) = LOWER(?) AND active = 1", (code_text,)).fetchone()
+    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ? AND active = 1", (code_text,)).fetchone()
     if not code_obj or code_obj['used_count'] >= code_obj['max_uses']:
         conn.close()
         return jsonify({'error': 'الكود غير صالح أو ملغى أو تم استخدامه بالكامل'}), 400
 
-    used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND LOWER(code) = LOWER(?)", (telegram_id, code_text)).fetchone()
+    used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
     if used:
         conn.close()
         return jsonify({'error': 'لقد استخدمت هذا الكود سابقاً'}), 400
@@ -889,8 +882,9 @@ def use_code():
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (real_code,))
     
-    cursor.execute("UPDATE users SET bot_balance = bot_balance + ?, site_balance = site_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
-                   (code_obj['amount'], code_obj['amount'], telegram_id, str(telegram_id)))
+    # يُضاف رصيد الكود لرصيد البوت حصرياً بناء على خصمه السابق من كاشيرة البوت
+    cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
+                   (code_obj['amount'], telegram_id, str(telegram_id)))
     
     conn.commit()
     
@@ -901,12 +895,12 @@ def use_code():
     notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
                    f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
                    f"🔑 الكود: <code>{real_code}</code>\n"
-                   f"💰 القيمة: {code_obj['amount']}$")
+                   f"💰 القيمة: {code_obj['amount']}$ (تمت إضافتها لرصيد البوت)")
     send_telegram_admin_notify(notify_text)
 
     return jsonify({
         'status': 'success',
-        'message': f'تم تفعيل الكود بنجاح وإضافة {code_obj["amount"]} إلى رصيدك',
+        'message': f'تم تفعيل الكود بنجاح وإضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك',
         'user': {
             'telegram_id': user_info['telegram_id'],
             'username': user_name_str,
@@ -915,6 +909,58 @@ def use_code():
         },
         'code': real_code,
         'amount': code_obj['amount']
+    })
+
+# --- مسارات جديدة لإدارة الأكواد من لوحة الأدمن ---
+
+@app.route('/api/admin/codes/list', methods=['GET'])
+def admin_list_codes():
+    """عرض الأكواد النشطة والملغاة وتفاصيلها"""
+    conn = get_db_connection()
+    codes = conn.execute("""
+        SELECT code, amount, max_uses, used_count, active, bot_id, created_at 
+        FROM gift_codes 
+        ORDER BY created_at DESC
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(c) for c in codes])
+
+@app.route('/api/admin/code/deactivate', methods=['POST'])
+def admin_deactivate_code():
+    """إلغاء تفعيل الكود وإعادة المبالغ المتبقية منه للكاشيرة"""
+    data = get_req_data()
+    code_text = str(data.get('code', '')).strip().upper()
+
+    if not code_text:
+        return jsonify({'error': 'يرجى تحديد الكود المراد إلغاؤه'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ?", (code_text,)).fetchone()
+    if not code_obj:
+        conn.close()
+        return jsonify({'error': 'الكود غير موجود'}), 404
+
+    if code_obj['active'] == 0:
+        conn.close()
+        return jsonify({'error': 'الكود ملغى بالفعل'}), 400
+
+    remaining_uses = max(0, code_obj['max_uses'] - code_obj['used_count'])
+    refund_amount = remaining_uses * code_obj['amount']
+    bot_id = code_obj['bot_id'] or 1
+
+    cursor.execute("UPDATE gift_codes SET active = 0 WHERE UPPER(code) = ?", (code_text,))
+    
+    if refund_amount > 0:
+        update_bot_cashier(cursor, refund_amount, bot_id)
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'message': f'تم إلغاء الكود {code_text} وإعادة {refund_amount}$ غير مستخدمة إلى حساب الكاشيرة'
     })
 
 # ==================== لوحة التحكم والطلب وإدارة الكاشيرة ====================
