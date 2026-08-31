@@ -115,7 +115,6 @@ def init_db():
         )
     ''')
 
-    # التأكد من التوافق والترحيل إذا كانت القاعدة تحتوي أسماء أعمدة قديمة
     user_columns = [
         ("site_username", "TEXT UNIQUE"),
         ("site_password", "TEXT"),
@@ -139,7 +138,6 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-    # دمج البيانات من العملاء في حال وجود عمود قديم balance أو spins_count
     try:
         cursor.execute("UPDATE users SET bot_balance = balance WHERE bot_balance = 0.0 AND balance > 0")
     except sqlite3.OperationalError:
@@ -598,12 +596,22 @@ def claim_welcome_bonus():
         conn.close()
         return jsonify({'error': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً'}), 400
 
-    update_bot_cashier(cursor, -bonus_amount, bot_id)
+    # خصم البونص فعلياً من الكاشيرة
+    old_cashier, new_cashier = update_bot_cashier(cursor, -bonus_amount, bot_id)
     cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ?, got_welcome_bonus = 1 WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (bonus_amount, telegram_id, str(telegram_id)))
 
     conn.commit()
     updated_user = cursor.execute("SELECT site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     conn.close()
+
+    user_name_str = user['site_username'] or user['username'] or str(telegram_id)
+    send_telegram_admin_notify(
+        f"🎁 <b>خصم كاشيرة (بونص ترحيبي):</b>\n"
+        f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
+        f"💰 القيمة: <b>{bonus_amount} NSP</b>\n"
+        f"🏦 الكاشيرة قبل: <code>{old_cashier:.2f} NSP</code>\n"
+        f"🏦 الكاشيرة بعد: <code>{new_cashier:.2f} NSP</code>"
+    )
 
     return jsonify({
         'status': 'success',
@@ -809,12 +817,10 @@ def wheel_spin():
 
         user_name_str = user['site_username'] or user['username'] or str(user_id)
         
-        # إرسال إشعار للمستخدم
         user_notify_msg = (f"🎡 <b>إشعار فوز في عجلة AUREX!</b>\n\n"
                            f"🎉 مبروك! لقد فزت بـ <b>{chosen_reward} NSP</b> تم إضافتها إلى محفظة البوت الخاصة بك مباشرة.")
         send_telegram_notify(user_id, user_notify_msg)
 
-        # إرسال إشعار للمدير (الأدمن)
         admin_notify_msg = (f"🎰 <b>خصم كاشيرة (فوز بعجلة الحظ):</b>\n"
                             f"👤 المستخدم: {user_name_str} (ID: <code>{user_id}</code>)\n"
                             f"🎁 الجائزة: <b>{chosen_reward} NSP</b>\n"
@@ -1077,15 +1083,19 @@ def admin_update_user_balance():
 
     if action == 'add':
         cursor.execute(f"UPDATE users SET {col} = COALESCE({col}, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
-        update_bot_cashier(cursor, -amount, bot_id)
+        old_c, new_c = update_bot_cashier(cursor, -amount, bot_id)
     else:
         cursor.execute(f"UPDATE users SET {col} = MAX(0, COALESCE({col}, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
-        update_bot_cashier(cursor, +amount, bot_id)
+        old_c, new_c = update_bot_cashier(cursor, +amount, bot_id)
 
     conn.commit()
     conn.close()
 
-    return jsonify({'status': 'success', 'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم تحديث الكاشيرة'})
+    return jsonify({
+        'status': 'success', 
+        'message': f'تمت عملية {action} بمبلغ {amount} بنجاح وتم تحديث الكاشيرة',
+        'cashier_balance': new_c
+    })
 
 @app.route('/api/admin/spins/grant_user', methods=['POST'])
 def admin_grant_spins_user():
@@ -1130,6 +1140,7 @@ def admin_grant_spins_all():
     return jsonify({'status': 'success', 'message': f'تم منح {spins} لفة مجانية لجميع المستخدمين بنجاح'})
 
 @app.route('/api/admin/cashier/add', methods=['POST'])
+@app.route('/api/admin/cashier/update', methods=['POST'])
 def admin_add_cashier():
     data = get_req_data()
     try:
