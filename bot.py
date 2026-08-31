@@ -471,7 +471,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                     self._send_json({"status": "error", "error": "ليس لديك محاولات لعب كافية!", "message": "ليس لديك محاولات لعب كافية!"})
                     return
 
-                # تحديث متوافق للحقلين spins_count و free_spins
                 cursor.execute("UPDATE users SET spins_count = spins_count - 1, free_spins = free_spins - 1 WHERE telegram_id = ?", (user_id,))
                 
                 win_rate = float(get_setting('game_win_rate', '30'))
@@ -633,7 +632,6 @@ def init_db():
     
     cursor = conn.cursor()
 
-    # جدول البوتات لدعم خادم Flask المرفق
     cursor.execute('''CREATE TABLE IF NOT EXISTS bots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bot_name TEXT NOT NULL,
@@ -824,7 +822,7 @@ async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
     return True
 
 # ==========================================================
-# 3. دالة معالجة كود الهدية المُصلحة والمحدثة
+# 3. دالة معالجة كود الهدية المُصلحة والمحدثة بالكامل
 # ==========================================================
 async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_code: str):
     user_id = update.effective_user.id
@@ -833,17 +831,25 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
     conn = get_db()
     cursor = conn.cursor()
 
-    now = datetime.now()
-    u = cursor.execute("SELECT code_restricted_until FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-    if u and u['code_restricted_until']:
-        try:
-            res_time = datetime.strptime(str(u['code_restricted_until']), '%Y-%m-%d %H:%M:%S')
-            if now < res_time:
-                diff = int((res_time - now).total_seconds())
-                await update.message.reply_text(f"🚫 أنت محظور مؤقتاً من تجربة الأكواد بسبب المحاولات الخاطئة. المتبقي: {diff} ثانية.")
-                conn.close()
-                return
-        except Exception: pass
+    # التأكد من وجود حساب العميل بقاعدة البيانات
+    db_u = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if not db_u:
+        is_main_admin = 1 if user_id == MAIN_ADMIN_ID else 0
+        cursor.execute("INSERT OR IGNORE INTO users (telegram_id, username, is_admin) VALUES (?, ?, ?)", 
+                       (user_id, update.effective_user.username or update.effective_user.first_name, is_main_admin))
+        conn.commit()
+
+    # فحص التقييد من محاولات الأكواد عبر قاعدة البيانات بدون مشاكل الفوارق الزمنية
+    restricted = cursor.execute(
+        "SELECT code_restricted_until FROM users WHERE telegram_id = ? AND code_restricted_until IS NOT NULL AND code_restricted_until > strftime('%Y-%m-%d %H:%M:%S', 'now')",
+        (user_id,)
+    ).fetchone()
+
+    if restricted and restricted['code_restricted_until']:
+        await update.message.reply_text("🚫 أنت محظور مؤقتاً من تجربة الأكواد بسبب المحاولات الخاطئة المتكررة. يرجى الانتظار ثم المحاولة لاحقاً.")
+        conn.close()
+        context.user_data.pop('state', None)
+        return
 
     code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_clean,)).fetchone()
     
@@ -858,12 +864,14 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         else:
             await update.message.reply_text(f"❌ كود غير صحيح أو منتهي الفعالية! (المحاولة {attempts}/3)")
         conn.close()
+        context.user_data.pop('state', None)
         return
 
     used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
     if used:
         await update.message.reply_text("❌ لقد استخدمت هذا الكود سابقاً!")
         conn.close()
+        context.user_data.pop('state', None)
         return
 
     amt = float(code_obj['amount'])
@@ -878,7 +886,8 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
     conn.commit()
     conn.close()
     
-    context.user_data.clear()
+    context.user_data.pop('code_attempts', None)
+    context.user_data.pop('state', None)
 
     await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nإضافة <b>+{amt:.2f} NSP</b> إلى رصيد بوتك.", parse_mode="HTML")
     
@@ -896,6 +905,20 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
 # ==========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
+    # تفاعل تلقائي برعد (⚡) أو نار (🔥) عند إرسال الأمر
+    if update.message:
+        emoji_choice = random.choice(["⚡", "🔥"])
+        try:
+            await update.message.set_reaction(reaction=emoji_choice)
+        except Exception:
+            try:
+                await context.bot.set_message_reaction(
+                    chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id,
+                    reaction=[{"type": "emoji", "emoji": emoji_choice}]
+                )
+            except Exception: pass
 
     conn = get_db()
     cursor = conn.cursor()
@@ -1520,11 +1543,14 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 6. معالج النصوص والرسائل وتفاعل الرموز (Text & Reaction Handling)
 # ==========================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # التفاعل التلقائي على الكلمات التي تبدأ بـ "برق" (⚡) أو "نار" (🔥)
-    if update.message and update.message.text:
-        msg_text = update.message.text.strip()
-        words = msg_text.split()
+    user_id = update.effective_user.id
+    text = update.message.text.strip() if (update.message and update.message.text) else ""
+
+    # التفاعل التلقائي على "برق"، "نار"، وكلمة "ستارت" (أو start / /start) برعد (⚡) أو نار (🔥)
+    if update.message and text:
+        words = text.split()
         for w in words:
+            w_lower = w.lower()
             if w.startswith("برق"):
                 try:
                     await update.message.set_reaction(reaction="⚡")
@@ -1549,20 +1575,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
                     except Exception: pass
                 break
+            elif w_lower in ["ستارت", "start", "/start"] or w_lower.startswith("ستارت") or w_lower.startswith("start"):
+                chosen_emoji = random.choice(["⚡", "🔥"])
+                try:
+                    await update.message.set_reaction(reaction=chosen_emoji)
+                except Exception:
+                    try:
+                        await context.bot.set_message_reaction(
+                            chat_id=update.effective_chat.id, 
+                            message_id=update.message.message_id, 
+                            reaction=[{"type": "emoji", "emoji": chosen_emoji}]
+                        )
+                    except Exception: pass
+                break
 
-    user_id = update.effective_user.id
-    text = update.message.text.strip() if (update.message and update.message.text) else ""
     state = context.user_data.get('state')
-
-    # التعرف التلقائي على أرقام وأكواد الهدايا حتى وإن فُقدت حالة الجلسة
-    if not state:
-        if text.upper().startswith("GIFT-") or (len(text) >= 6 and text.isalnum() and not text.isdigit()):
-            state = 'WAIT_GIFT_CODE'
-        elif update.message and update.message.photo:
-            state = 'WAIT_WIN_SHOT'
 
     conn = get_db()
     cursor = conn.cursor()
+
+    # التعرف الذكي والتلقائي على أكواد الهدايا دون الخلط مع الكلمات العادية
+    if not state and text:
+        if text.upper().startswith("GIFT-"):
+            state = 'WAIT_GIFT_CODE'
+        elif update.message and update.message.photo:
+            state = 'WAIT_WIN_SHOT'
+        else:
+            # التحقق مما إذا كان النص الصادر يطابق كود هدية نشط بالموقع
+            chk_code = cursor.execute("SELECT code FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (text,)).fetchone()
+            if chk_code:
+                state = 'WAIT_GIFT_CODE'
 
     try:
         if state == 'WAIT_GIFT_CODE':
@@ -1608,7 +1650,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
-                # إضافة اللفات لحقلي spins_count و free_spins للتوافق الكامل مع الملفين
                 cursor.execute("UPDATE users SET spins_count = spins_count + 1, free_spins = free_spins + 1 WHERE telegram_id = ?", (ref_id,))
                 conn.commit()
                 try:
@@ -2199,20 +2240,16 @@ def main():
     
     init_db()
 
-    # تشغيل خادم صحة الخدمة وعجلة الحظ في مسار (Thread) منفصل
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
     health_thread.start()
 
-    # إنشاء تطبيق تلغرام
     application = Application.builder().token(BOT_TOKEN).build()
     bot_app = application
 
-    # تسجيل الأوامر والمعالجات (Handlers)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_router))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
 
-    # ربط حلقة الأحداث الأساسية
     MAIN_LOOP = asyncio.get_event_loop()
     
     logging.info("Starting Aurex Telegram Bot Application...")
