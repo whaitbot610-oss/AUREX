@@ -2173,10 +2173,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             elif state == 'WAIT_ADMIN_REPLY_SUPP':
-                target_id = context.user_data.get('support_target')
+                target = context.user_data.get('support_target')
                 try:
-                    await context.bot.send_message(target_id, f"💬 <b>رد من الدعم الفني:</b>\n\n{html.escape(text)}", parse_mode="HTML")
-                    await update.message.reply_text("✅ تم إرسال الرد للعميل بنجاح.")
+                    await context.bot.send_message(target, f"💬 <b>رد من الدعم الفني:</b>\n\n{html.escape(text)}", parse_mode="HTML")
+                    await update.message.reply_text("✅ تم إرسال الرد بنجاح.")
                 except Exception as e:
                     await update.message.reply_text(f"❌ تعذر إرسال الرد: {e}")
                 context.user_data.clear()
@@ -2185,31 +2185,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         conn.close()
     except Exception as e:
-        logging.error(f"Error handling message: {e}")
-        conn.close()
+        logging.error(f"Error in handle_message: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # ==========================================================
-# 7. نقطة البدء وتشغيل البوت (Main Entry Point)
+# 7. تشغيل البوت والخادم الرئيسي (Main Execution)
 # ==========================================================
 def main():
     global MAIN_LOOP, bot_app
-
+    
     init_db()
 
-    # تشغيل خادم صحة الخدمة وعجلة الحظ في مسار مستقل (Thread)
-    server_thread = threading.Thread(target=start_health_check_server, daemon=True)
-    server_thread.start()
+    # تشغيل خادم صحة الخدمة وعجلة الحظ في مسار (Thread) منفصل
+    health_thread = threading.Thread(target=start_health_check_server, daemon=True)
+    health_thread.start()
 
+    # إنشاء تطبيق تلغرام
+    application = Application.builder().token(BOT_TOKEN).build()
+    bot_app = application
+
+    # تسجيل الأوامر والمعالجات (Handlers)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(callback_router))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
+
+    # ربط حلقة الأحداث الأساسية
     MAIN_LOOP = asyncio.get_event_loop()
+    
+    logging.info("Starting Aurex Telegram Bot Application...")
+    application.run_polling(drop_pending_updates=True)
 
-    bot_app = Application.builder().token(BOT_TOKEN).build()
-
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(CallbackQueryHandler(callback_router))
-    bot_app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
-
-    logging.info("Bot is starting...")
-    bot_app.run_polling()
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
