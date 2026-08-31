@@ -829,16 +829,15 @@ async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    # إضافة تفاعل البوت التلقائي بالبرق (⚡) أو النار (🔥) العشوائي عند تشغيل البوت
-    chosen_reaction = random.choice(["🔥", "⚡"])
+    # إضافة تفاعل البوت التلقائي (Reaction 🔥) على رسالة start لتلغرام
     try:
-        await update.message.set_reaction(reaction=chosen_reaction)
+        await update.message.set_reaction(reaction="🔥")
     except Exception:
         try:
             await context.bot.set_message_reaction(
                 chat_id=update.effective_chat.id, 
                 message_id=update.message.message_id, 
-                reaction=[{"type": "emoji", "emoji": chosen_reaction}]
+                reaction=[{"type": "emoji", "emoji": "🔥"}]
             )
         except Exception:
             pass
@@ -867,19 +866,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     ref_by = None
-    if context.args and len(context.args) > 0:
-        arg_text = context.args[0].strip()
-        if arg_text.isdigit():
-            parsed_id = int(arg_text)
-            if parsed_id != user.id:
-                ref_by = parsed_id
-        elif arg_text.upper().startswith("GIFT-") or len(arg_text) >= 4:
-            context.user_data['state'] = 'WAIT_GIFT_CODE'
-            conn.close()
-            if update.message:
-                update.message.text = arg_text
-            await handle_message(update, context)
-            return
+    if context.args and len(context.args) > 0 and context.args[0].isdigit():
+        parsed_id = int(context.args[0])
+        if parsed_id != user.id:
+            ref_by = parsed_id
 
     if not db_user:
         is_main_admin = 1 if user.id == MAIN_ADMIN_ID else 0
@@ -1475,55 +1465,46 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 5. معالج النصوص والرسائل (Text Handling)
 # ==========================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-        
-    user_id = update.effective_user.id
-    text = update.message.text.strip() if (update.message and update.message.text) else ""
-    state = context.user_data.get('state')
-
-    # تفاعل البوت على رسالة كلمة ستارت أو start بالبرق والرعب (⚡ / 🔥)
-    if text and ("ستارت" in text.lower() or "start" in text.lower()):
-        chosen_reaction = random.choice(["🔥", "⚡"])
+    if update.message:
         try:
-            await update.message.set_reaction(reaction=chosen_reaction)
+            await update.message.set_reaction(reaction="⚡")
         except Exception:
             try:
                 await context.bot.set_message_reaction(
                     chat_id=update.effective_chat.id, 
                     message_id=update.message.message_id, 
-                    reaction=[{"type": "emoji", "emoji": chosen_reaction}]
+                    reaction=[{"type": "emoji", "emoji": "⚡"}]
                 )
             except Exception:
                 pass
 
-    conn = get_db()
-    cursor = conn.cursor()
+    user_id = update.effective_user.id
+    text = update.message.text.strip() if (update.message and update.message.text) else ""
+    state = context.user_data.get('state')
 
-    # التعرف التلقائي الذكي والوثيق على أكواد الهدايا حتى إن فُقدت حالة الجلسة أو أرسلها العميل مباشرة
-    if not state and text:
-        code_check = text.strip()
-        if code_check.upper().startswith("GIFT-") or (len(code_check) >= 5 and not code_check.isdigit()):
-            check_db_code = cursor.execute("SELECT 1 FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_check,)).fetchone()
-            if check_db_code or code_check.upper().startswith("GIFT-"):
-                state = 'WAIT_GIFT_CODE'
-                context.user_data['state'] = 'WAIT_GIFT_CODE'
+    # التعرف التلقائي على أرقام وأكواد الهدايا حتى وإن فُقدت حالة الجلسة
+    if not state:
+        if text.upper().startswith("GIFT-") or (len(text) >= 6 and text.isalnum() and not text.isdigit()):
+            state = 'WAIT_GIFT_CODE'
         elif update.message and update.message.photo:
             state = 'WAIT_WIN_SHOT'
+        else:
+            return
 
-    if not state:
-        conn.close()
-        return
+    conn = get_db()
+    cursor = conn.cursor()
 
     try:
         if state == 'WAIT_SITE_USER':
             if not validate_username(text):
                 await update.message.reply_text("❌ اسم المستخدم غير صالح! يجب أن يتكون من 6 أحرف/أرقام إنجليزية على الأقل وبدون رموز وخالٍ من المسافات.")
+                conn.close()
                 return
                 
             check = cursor.execute("SELECT telegram_id FROM users WHERE site_username = ?", (text,)).fetchone()
             if check:
                 await update.message.reply_text("❌ اسم المستخدم هذا محجوز لعميل آخر! يرجى اختيار اسم مختلف.")
+                conn.close()
                 return
 
             context.user_data['temp_site_user'] = text
@@ -1534,11 +1515,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="HTML"
             )
+            conn.close()
             return
 
         elif state == 'WAIT_SITE_PASS':
             if not validate_password(text):
                 await update.message.reply_text("❌ كلمة المرور ضعيفة! يجب أن تكون 6 خانات على الأقل وتحتوي على أحرف وأرقام إنجليزية معاً.")
+                conn.close()
                 return
 
             username = context.user_data.get('temp_site_user')
@@ -1550,7 +1533,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
-                # إضافة اللفات لحقلي spins_count و free_spins للتوافق الكامل مع كافة أجزاء السيرفر
+                # إضافة اللفات لحقلي spins_count و free_spins للتوافق الكامل مع الملفين
                 cursor.execute("UPDATE users SET spins_count = spins_count + 1, free_spins = free_spins + 1 WHERE telegram_id = ?", (ref_id,))
                 conn.commit()
                 try:
@@ -1558,6 +1541,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception: pass
             else:
                 conn.commit()
+                
+            conn.close()
 
             context.user_data.clear()
             
@@ -1578,16 +1563,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if amt <= 0: raise ValueError
             except ValueError:
                 await update.message.reply_text("❌ أدخل مبلغاً صحيحاً!")
+                conn.close()
                 return
 
             u = cursor.execute("SELECT balance, bot_balance, site_username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             curr_bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
             if curr_bal < amt:
                 await update.message.reply_text("❌ رصيدك في البوت غير كافٍ لهذا التحويل!")
+                conn.close()
                 return
 
             cursor.execute("UPDATE users SET balance = balance - ?, bot_balance = bot_balance - ?, site_balance = site_balance + ? WHERE telegram_id = ?", (amt, amt, amt, user_id))
             conn.commit()
+            conn.close()
             context.user_data.clear()
             await update.message.reply_text(f"✅ تم تحويل <b>{amt:.2f} NSP</b> بنجاح إلى حسابك بالموقع!", parse_mode="HTML")
             await show_main_menu(update, context)
@@ -1599,15 +1587,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if amt <= 0: raise ValueError
             except ValueError:
                 await update.message.reply_text("❌ أدخل مبلغاً صحيحاً!")
+                conn.close()
                 return
 
             u = cursor.execute("SELECT site_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             if u['site_balance'] < amt:
                 await update.message.reply_text("❌ رصيدك في الموقع غير كافٍ لهذا السحب!")
+                conn.close()
                 return
 
             cursor.execute("UPDATE users SET site_balance = site_balance - ?, balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, amt, user_id))
             conn.commit()
+            conn.close()
             context.user_data.clear()
             await update.message.reply_text(f"↩️ تم سحب <b>{amt:.2f} NSP</b> بنجاح من رصيد الموقع إلى رصيد البوت!", parse_mode="HTML")
             await show_main_menu(update, context)
@@ -1619,9 +1610,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 min_dep = float(get_setting('min_deposit', '50'))
                 if amt < min_dep:
                     await update.message.reply_text(f"❌ المبلغ أقل من الحد الأدنى للشحن ({min_dep} NSP)!")
+                    conn.close()
                     return
             except ValueError:
                 await update.message.reply_text("❌ أدخل رقماً صحيحاً للمبلغ!")
+                conn.close()
                 return
 
             context.user_data['dep_amt'] = amt
@@ -1634,6 +1627,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"ثم أرسل رقم العملية / رقم التحويل الآن للتأكيد:",
                 parse_mode="HTML"
             )
+            conn.close()
             return
 
         elif state == 'WAIT_DEP_TX':
@@ -1646,6 +1640,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 (user_id, method, amt, tx_num)
             )
             conn.commit()
+            conn.close()
             context.user_data.clear()
 
             await update.message.reply_text("✅ <b>تم إرسال طلب الشحن بنجاح!</b> وسيتم إشعارك فور مراجعته وقبوله.", parse_mode="HTML")
@@ -1667,20 +1662,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 min_with = float(get_setting('min_withdraw', '100'))
                 if amt < min_with:
                     await update.message.reply_text(f"❌ المبلغ أقل من الحد الأدنى للسحب ({min_with} NSP)!")
+                    conn.close()
                     return
             except ValueError:
                 await update.message.reply_text("❌ أدخل رقماً صحيحاً للمبلغ!")
+                conn.close()
                 return
 
             u = cursor.execute("SELECT balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             curr_bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
             if curr_bal < amt:
                 await update.message.reply_text("❌ رصيدك الحالي في البوت غير كافٍ للسحب!")
+                conn.close()
                 return
 
             context.user_data['with_amt'] = amt
             context.user_data['state'] = 'WAIT_WITH_ACC'
             await update.message.reply_text("✍️ <b>الخطوة الثانية:</b> أرسل رقم حسابك / رقم محفظتك لاستلام المبلغ:")
+            conn.close()
             return
 
         elif state == 'WAIT_WITH_ACC':
@@ -1694,6 +1693,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 (user_id, method, amt, acc_target)
             )
             conn.commit()
+            conn.close()
             context.user_data.clear()
 
             await update.message.reply_text("✅ <b>تم إرسال طلب السحب بنجاح!</b> وخصم المبلغ مؤقتاً لحين معالجة الطلب.", parse_mode="HTML")
@@ -1714,15 +1714,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u = cursor.execute("SELECT code_restricted_until FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
             if u and u['code_restricted_until']:
                 try:
-                    res_str = str(u['code_restricted_until']).split('.')[0]
-                    res_time = datetime.strptime(res_str, '%Y-%m-%d %H:%M:%S')
+                    res_time = datetime.strptime(str(u['code_restricted_until']), '%Y-%m-%d %H:%M:%S')
                     if now < res_time:
                         diff = int((res_time - now).total_seconds())
                         await update.message.reply_text(f"🚫 أنت محظور مؤقتاً من تجربة الأكواد بسبب المحاولات الخاطئة. المتبقي: {diff} ثانية.")
-                        context.user_data.clear()
+                        conn.close()
                         return
-                except Exception as e:
-                    logging.error(f"Restriction date check error: {e}")
+                except Exception: pass
 
             code_clean = text.strip()
             code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_clean,)).fetchone()
@@ -1734,31 +1732,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     cursor.execute("UPDATE users SET code_restricted_until = strftime('%Y-%m-%d %H:%M:%S', 'now', '+10 minutes') WHERE telegram_id = ?", (user_id,))
                     conn.commit()
                     context.user_data['code_attempts'] = 0
-                    context.user_data.clear()
                     await update.message.reply_text("🚫 أدخلت كوداً خاطئاً 3 مرات! تم تقييدك من إدخال الأكواد لمدة 10 دقائق.")
                 else:
                     await update.message.reply_text(f"❌ كود غير صحيح أو منتهي الفعالية! (المحاولة {attempts}/3)")
+                conn.close()
                 return
 
-            actual_code = code_obj['code']
-            used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, actual_code)).fetchone()
+            used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
             if used:
                 await update.message.reply_text("❌ لقد استخدمت هذا الكود سابقاً!")
-                context.user_data.clear()
+                conn.close()
                 return
 
             amt = float(code_obj['amount'])
+            actual_code = code_obj['code']
             new_used_count = code_obj['used_count'] + 1
             is_active = 0 if new_used_count >= code_obj['max_uses'] else 1
 
-            cursor.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (?, ?)", (user_id, update.effective_user.username or update.effective_user.first_name))
             cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, actual_code))
             cursor.execute("UPDATE gift_codes SET used_count = ?, is_active = ? WHERE code = ?", (new_used_count, is_active, actual_code))
-            cursor.execute("UPDATE users SET balance = COALESCE(balance, 0.0) + ?, bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ?", (amt, amt, user_id))
+            cursor.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, user_id))
             conn.commit()
+            conn.close()
             context.user_data.clear()
 
-            await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nتمت إضافة <b>+{amt:.2f} NSP</b> إلى رصيد بوتك.", parse_mode="HTML")
+            await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nإضافة <b>+{amt:.2f} NSP</b> إلى رصيد بوتك.", parse_mode="HTML")
             
             await send_all_admins(
                 context,
@@ -1786,6 +1784,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await send_all_admins(context, msg_txt)
                 
+            conn.close()
             context.user_data.clear()
             await update.message.reply_text("✅ تم إرسال الصورة/الإشعار للإدارة بنجاح.")
             await show_main_menu(update, context)
@@ -1799,6 +1798,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"الرسالة:\n{html.escape(text)}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 الرد على العميل", callback_data=f"reply_support_{user_id}")]])
             )
+            conn.close()
             context.user_data.clear()
             await update.message.reply_text("✅ تم إرسال رسالتك إلى فريق الدعم الفني بنجاح.")
             await show_main_menu(update, context)
@@ -1814,6 +1814,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل نسبة مئوية صحيحة من 0 إلى 100!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_SLICE_WEIGHT_AMT':
@@ -1832,6 +1833,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً للوزن!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_SPINS_USER_ID':
@@ -1842,11 +1844,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 if not u:
                     await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
+                    conn.close()
                     return
                 context.user_data['target_spins_user'] = u['telegram_id']
                 context.user_data['state'] = 'ADM_WAIT_SPINS_COUNT'
                 curr_spins = u['free_spins'] if u['free_spins'] is not None else u['spins_count']
                 await update.message.reply_text(f"👤 العميل: <code>{u['telegram_id']}</code>\n🎡 اللفات الحالية: <b>{curr_spins}</b>\n\n✍️ أدخل عدد اللفات المراد إضافتها:", parse_mode="HTML")
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_SPINS_COUNT':
@@ -1863,6 +1867,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل عدداً صحيحاً أكبر من 0!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_ADD_BAL_ID':
@@ -1873,10 +1878,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 if not u:
                     await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
+                    conn.close()
                     return
                 context.user_data['target_adm_user'] = u['telegram_id']
                 context.user_data['state'] = 'ADM_WAIT_ADD_BAL_AMT'
                 await update.message.reply_text(f"👤 العميل: <code>{u['telegram_id']}</code> ({u['site_username'] or 'غير مربوط'})\n\n✍️ أدخل المبلغ المراد إضافته (+) أو خصمه (-):", parse_mode="HTML")
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_ADD_BAL_AMT':
@@ -1887,6 +1894,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         cashier_bal = get_cashier_balance()
                         if cashier_bal < amt:
                             await update.message.reply_text(f"⚠️ <b>تحذير:</b> رصيد الكاشيرة الحالي ({cashier_bal:.2f} NSP) أقل من المبلغ المطلوب إضافته ({amt:.2f} NSP)!", parse_mode="HTML")
+                            conn.close()
                             return
                     before_cashier, after_cashier = update_cashier(-amt)
                     cursor.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, t_user))
@@ -1904,6 +1912,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_BONUS_AMT':
@@ -1914,6 +1923,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل مبلغاً صحيحاً!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_MIN_DEP':
@@ -1924,6 +1934,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"✅ تم تحديد الحد الأدنى للشحن: <b>{amt:.2f} NSP</b>\n\n✍️ أدخل الحد الأدنى للسحب الآن بـ NSP:", parse_mode="HTML")
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً!")
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_MIN_WITH':
@@ -1934,12 +1945,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_PAY_NUMBER':
                 m_name = context.user_data.get('edit_pay_method')
                 cursor.execute("UPDATE payment_methods SET number = ? WHERE name = ?", (text, m_name))
                 conn.commit()
+                conn.close()
                 context.user_data.clear()
                 await update.message.reply_text(f"✅ تم تحديث رقم/حساب {m_name} إلى: <code>{text}</code>", parse_mode="HTML")
                 return
@@ -1953,6 +1966,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("✍️ <b>خطوة 2/3:</b> أدخل عدد الأكواد المراد توليدها:")
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً!")
+                conn.close()
                 return
 
             elif state == 'ADM_GIFT_COUNT':
@@ -1964,6 +1978,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("✍️ <b>خطوة 3/3:</b> أدخل عدد مرات الاستخدام المسموحة لكل كود:")
                 except ValueError:
                     await update.message.reply_text("❌ أدخل عدداً صحيحاً!")
+                conn.close()
                 return
 
             elif state == 'ADM_GIFT_USES':
@@ -1983,6 +1998,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             f"• المتاح بالكاشيرة: <code>{cashier_bal:.2f} NSP</code>",
                             parse_mode="HTML"
                         )
+                        conn.close()
                         context.user_data.clear()
                         return
 
@@ -2006,6 +2022,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(txt, parse_mode="HTML")
                 except Exception as e:
                     await update.message.reply_text(f"❌ حدث خطأ أثناء التوليد: {e}")
+                conn.close()
                 context.user_data.clear()
                 return
 
@@ -2027,12 +2044,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ الكود غير موجود أو غير مفعّل بالفعل.")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_CHANNELS':
                 set_setting('forced_channels', text)
                 await update.message.reply_text(f"✅ تم تحديث قنوات الاشتراك الإجباري إلى:\n<code>{html.escape(text)}</code>", parse_mode="HTML")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_NEW_ADMIN':
@@ -2044,6 +2063,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_USER_DETAILS':
@@ -2073,6 +2093,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ لم يتم العثور على العميل!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_BAN_ID':
@@ -2084,6 +2105,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_UNBAN_ID':
@@ -2095,10 +2117,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_BROADCAST':
                 users = cursor.execute("SELECT telegram_id FROM users WHERE is_banned = 0").fetchall()
+                conn.close()
                 count = 0
                 for u_row in users:
                     try:
@@ -2118,6 +2142,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"✍️ أدخل الرسالة المراد إرسالها للعميل <code>{text}</code>:", parse_mode="HTML")
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
+                conn.close()
                 return
 
             elif state == 'ADM_WAIT_PRIV_MSG_TEXT':
@@ -2128,6 +2153,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     await update.message.reply_text(f"❌ تعذر إرسال الرسالة للعميل: {e}")
                 context.user_data.clear()
+                conn.close()
                 return
 
             elif state == 'WAIT_ADMIN_REPLY_SUPP':
@@ -2138,40 +2164,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     await update.message.reply_text(f"❌ تعذر إرسال الرد: {e}")
                 context.user_data.clear()
+                conn.close()
                 return
 
+        conn.close()
     except Exception as e:
         logging.error(f"Error handling message: {e}")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
 
 # ==========================================================
-# 6. تشغيل التطبيق والمعالجات الرئيسية (Main Runner)
+# 6. نقطة البدء وتشغيل البوت (Main Entry Point)
 # ==========================================================
 def main():
-    global bot_app, MAIN_LOOP
+    global MAIN_LOOP, bot_app
+
     init_db()
 
-    # بدء خادم الصحة والويب لعجلة الحظ في Thread منفصل
-    health_thread = threading.Thread(target=start_health_check_server, daemon=True)
-    health_thread.start()
-
-    application = Application.builder().token(BOT_TOKEN).build()
-    bot_app = application
+    # تشغيل خادم صحة الخدمة وعجلة الحظ في مسار مستقل (Thread)
+    server_thread = threading.Thread(target=start_health_check_server, daemon=True)
+    server_thread.start()
 
     MAIN_LOOP = asyncio.get_event_loop()
 
-    # تسجيل الموجهات والأوامر
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(callback_router))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_message))
+    bot_app = Application.builder().token(BOT_TOKEN).build()
 
-    logging.info("Starting AUREX Bot...")
-    application.run_polling(drop_pending_updates=True)
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CallbackQueryHandler(callback_router))
+    bot_app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
+
+    logging.info("Bot is starting...")
+    bot_app.run_polling()
 
 if __name__ == "__main__":
     main()
