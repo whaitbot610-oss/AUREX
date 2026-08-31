@@ -174,11 +174,10 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    for col_name, col_type in [("active", "INTEGER DEFAULT 1"), ("bot_id", "INTEGER DEFAULT 1"), ("used_count", "INTEGER DEFAULT 0"), ("max_uses", "INTEGER DEFAULT 1")]:
-        try:
-            cursor.execute(f"ALTER TABLE gift_codes ADD COLUMN {col_name} {col_type}")
-        except sqlite3.OperationalError:
-            pass
+    try:
+        cursor.execute("ALTER TABLE gift_codes ADD COLUMN active INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
 
     # 5. سجل الأكواد المستخدمة
     cursor.execute('''
@@ -473,7 +472,7 @@ def get_spins_status():
     conn.close()
 
     if not user:
-        return jsonify({'status': 'success', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
+        return jsonify({'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
 
     spins_count = user['free_spins'] if user['free_spins'] is not None else 0
     return jsonify({
@@ -897,7 +896,6 @@ def create_code():
         conn.close()
         return jsonify({'status': 'error', 'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
 
-# --- دالة استخدام الكود المُحدثة بالكامل لحل مشكلة قراءة الأكواد ---
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
     data = get_req_data()
@@ -905,20 +903,20 @@ def use_code():
     code_text = str(data.get('code', '')).strip().upper()
 
     if not telegram_id:
-        return jsonify({'status': 'error', 'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 200
+        return jsonify({'status': 'error', 'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 400
     if not code_text:
-        return jsonify({'status': 'error', 'error': 'يرجى إدخال كود الهدية'}), 200
+        return jsonify({'status': 'error', 'error': 'يرجى إدخال كود الهدية'}), 400
 
     try:
         telegram_id = int(telegram_id)
     except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'error': 'معرف المستخدم غير صالح'}), 200
+        return jsonify({'status': 'error', 'error': 'معرف المستخدم غير صالح'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        # ضمان وجود حساب المستخدم
+        # 1. التأكد من وجود الحساب
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
         if not user:
             cursor.execute("""
@@ -926,39 +924,40 @@ def use_code():
                 VALUES (?, ?, ?, ?, 0.0, 0.0)
             """, (telegram_id, f"user_{telegram_id}", f"user_{telegram_id}", f"pass_{telegram_id}"))
             conn.commit()
-            user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
 
-        # 1. البحث عن الكود بغض النظر عن حالته لمعرفة السبب المباشر
+        # 2. البحث عن الكود بغض النظر عن حالة تفعيله لتشخيص السبب الدقيق
         code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ?", (code_text,)).fetchone()
         
-        # حالة (1): الكود غير موجود كلياً
         if not code_obj:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'الكود غير موجود أو غير صالح، يرجى التأكد من كتابته بشكل صحيح'}), 200
+            return jsonify({'status': 'error', 'error': 'الكود غير موجود أو غير صحيح'}), 400
 
-        real_code = code_obj['code']
+        if code_obj['active'] == 0:
+            conn.close()
+            return jsonify({'status': 'error', 'error': 'هذا الكود تم إلغاؤه أو غير مفعل'}), 400
+
         used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
         max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
         amount = float(code_obj['amount']) if code_obj['amount'] is not None else 0.0
-        is_active = code_obj['active'] if code_obj['active'] is not None else 1
 
-        # حالة (2): الكود غير مفعل أو تم استنفاد عدد استخداماته
-        if is_active == 0 or used_count >= max_uses:
+        if used_count >= max_uses:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'هذا الكود تم استخدامه بالكامل سابقاً وانتهت صلاحيته'}), 200
+            return jsonify({'status': 'error', 'error': 'تم استخدام هذا الكود بالكامل للعدد المسموح به'}), 400
 
-        # حالة (3): الكود مستخدم سابقاً من قبل هذا المستخدم تحديداً
+        # 3. التحقق مما إذا كان المستخدم استخدم الكود مسبقاً
         used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
         if used:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'لقد قمت باستخدام وتفعيل هذا الكود سابقاً على حسابك'}), 200
+            return jsonify({'status': 'error', 'error': 'لقد قمت بتفعيل هذا الكود ومنح رصيدك منه سابقاً'}), 400
 
-        # حالة (4): الكود صالح وجاهز للتفعيل
+        # 4. تفعيل الكود وخصمه وإضافة الرصيد
+        real_code = code_obj['code']
         new_used_count = used_count + 1
-        next_active_state = 0 if new_used_count >= max_uses else 1
+        is_active = 0 if new_used_count >= max_uses else 1
 
         cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
-        cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, next_active_state, real_code))
+        cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, is_active, real_code))
+        
         cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
                        (amount, telegram_id, str(telegram_id)))
         
@@ -971,7 +970,6 @@ def use_code():
         bot_bal = float(user_info['bot_balance'] if user_info and user_info['bot_balance'] is not None else 0.0)
         site_bal = float(user_info['site_balance'] if user_info and user_info['site_balance'] is not None else 0.0)
 
-        # إشعار أدمن التلغرام
         notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
                        f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
                        f"🔑 الكود: <code>{real_code}</code>\n"
@@ -980,7 +978,7 @@ def use_code():
 
         return jsonify({
             'status': 'success',
-            'message': f'تم تفعيل الكود بنجاح وإضافة {amount} NSP إلى رصيد البوت الخاص بك',
+            'message': f'تم تفعيل الكود بنجاح وإضافة {amount} إلى رصيد البوت الخاص بك',
             'user': {
                 'telegram_id': telegram_id,
                 'username': user_name_str,
@@ -989,14 +987,13 @@ def use_code():
             },
             'code': real_code,
             'amount': amount
-        }), 200
-
+        })
     except Exception as e:
         conn.rollback()
         conn.close()
         print(f"Error handling code use: {e}", flush=True)
         traceback.print_exc()
-        return jsonify({'status': 'error', 'error': f'حدث خطأ أثناء معالجة الكود: {str(e)}'}), 200
+        return jsonify({'status': 'error', 'error': f'حدث خطأ أثناء معالجة الكود: {str(e)}'}), 500
 
 # --- مسارات إدارة الأكواد من لوحة الأدمن ---
 
@@ -1296,4 +1293,3 @@ if __name__ == '__main__':
     launch_bot()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, threaded=True)
-٠
