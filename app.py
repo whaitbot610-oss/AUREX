@@ -430,7 +430,7 @@ def get_user_account():
 def get_spins_status():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر تحديد آيدي المستخدم', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0}), 200
+        return jsonify({'error': 'تعذر تحديد آيدي المستخدم، يرجى فتح العجلة من البوت', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0}), 200
 
     conn = get_db_connection()
     user = conn.execute("""
@@ -542,7 +542,7 @@ def claim_welcome_bonus():
 
     if user['got_welcome_bonus'] == 1:
         conn.close()
-        return jsonify({'error': 'لقدحصلت على البونص الترحيبي سابقاً'}), 400
+        return jsonify({'error': 'لقد حصلت على البونص الترحيبي سابقاً'}), 400
 
     try:
         bonus_amount = float(get_setting(cursor, 'welcome_bonus', '10.0'))
@@ -710,12 +710,12 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# عجلة الحظ (تعمل عبر البوت، تُخصم من لفات/رصيد البوت وتُضيف لرصيد البوت وتُخصم من الكاشيرة)
+# عجلة الحظ (منفصلة تماماً ومربوطة بالبوت: تستخدم رصيد/لفات البوت والجوائز تُضاف لرصيد البوت وتُخصم من الكاشيرة)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر تحديد معرّف المستخدم، يرجى فتح العجلة من البوت مباشرة'}), 400
+        return jsonify({'error': 'عذراً، يجب تشغيل العجلة عبر بوت التلغرام حصراً'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -879,10 +879,13 @@ def use_code():
         return jsonify({'error': 'لقد استخدمت هذا الكود سابقاً'}), 400
 
     real_code = code_obj['code']
+    new_used_count = code_obj['used_count'] + 1
+    is_active = 0 if new_used_count >= code_obj['max_uses'] else 1
+
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
-    cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (real_code,))
+    cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, is_active, real_code))
     
-    # يُضاف رصيد الكود لرصيد البوت حصرياً بناء على خصمه السابق من كاشيرة البوت
+    # يُضاف رصيد الكود لرصيد البوت حصرياً بناءً على خصمه السابق من كاشيرة البوت
     cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
                    (code_obj['amount'], telegram_id, str(telegram_id)))
     
@@ -911,11 +914,10 @@ def use_code():
         'amount': code_obj['amount']
     })
 
-# --- مسارات جديدة لإدارة الأكواد من لوحة الأدمن ---
+# --- مسارات إدارة الأكواد من لوحة الأدمن ---
 
 @app.route('/api/admin/codes/list', methods=['GET'])
 def admin_list_codes():
-    """عرض الأكواد النشطة والملغاة وتفاصيلها"""
     conn = get_db_connection()
     codes = conn.execute("""
         SELECT code, amount, max_uses, used_count, active, bot_id, created_at 
@@ -925,9 +927,10 @@ def admin_list_codes():
     conn.close()
     return jsonify([dict(c) for c in codes])
 
+@app.route('/api/code/deactivate', methods=['POST'])
 @app.route('/api/admin/code/deactivate', methods=['POST'])
 def admin_deactivate_code():
-    """إلغاء تفعيل الكود وإعادة المبالغ المتبقية منه للكاشيرة"""
+    """إلغاء تفعيل الكود وإعادة المبالغ غير المستخدمة منه تلقائياً إلى الكاشيرة"""
     data = get_req_data()
     code_text = str(data.get('code', '')).strip().upper()
 
@@ -1176,11 +1179,13 @@ def process_transaction():
 
     if action == 'approve':
         if tx['type'] == 'deposit':
+            # الإيداع يضيف رصيداً للمستخدم ويضيف الأموال المودعة لكاشيرة البوت
             cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
-            update_bot_cashier(cursor, -tx['amount'], bot_id)
-        elif tx['type'] == 'withdraw':
-            cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
             update_bot_cashier(cursor, +tx['amount'], bot_id)
+        elif tx['type'] == 'withdraw':
+            # السحب يخصم رصيد المستخدم ويخصم المبلغ من الكاشيرة
+            cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
+            update_bot_cashier(cursor, -tx['amount'], bot_id)
 
     cursor.execute("UPDATE transactions SET status = ? WHERE id = ?", (action, tx_id))
     conn.commit()
