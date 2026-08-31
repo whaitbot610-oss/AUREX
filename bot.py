@@ -22,7 +22,7 @@ from telegram.ext import (
 # 0. خادم صحة الخدمة وواجهة API وعجلة الحظ (Web App Server)
 # ==========================================================
 WHEEL_VALUES = [0, 5, 10, 15, 25, 50, 100, 500, 10000]
-MAIN_LOOP = None  # مرجع حلقة الأحداث الرئيسية لإرسال الإشعارات
+MAIN_LOOP = None
 
 HTML_WHEEL_PAGE = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -61,7 +61,7 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
 
     <div class="info-card">
         <div class="info-item">
-            <span class="label">المحاولات</span>
+            <span class="label">المحاولات المتاحة</span>
             <span class="val" id="spinsCount">--</span>
         </div>
         <div class="info-item">
