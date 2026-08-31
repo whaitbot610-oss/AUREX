@@ -65,7 +65,11 @@ def add_cors_headers(response):
 def handle_exception(e):
     print(f"!!! SERVER ERROR OCCURRED: {str(e)} !!!", flush=True)
     traceback.print_exc()
-    return jsonify({'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'}), 500
+    return jsonify({
+        'status': 'error',
+        'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}',
+        'message': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'
+    }), 200
 
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30, check_same_thread=False)
@@ -252,6 +256,7 @@ def get_req_data():
     return data
 
 def get_bot_cashier(cursor, bot_id=1):
+    bot_id = bot_id or 1
     cursor.execute("SELECT cashier_balance FROM bots WHERE id = ?", (bot_id,))
     row = cursor.fetchone()
     if row and row['cashier_balance'] is not None:
@@ -262,9 +267,15 @@ def get_bot_cashier(cursor, bot_id=1):
     return float(s_row['value']) if s_row else 0.0
 
 def update_bot_cashier(cursor, amount_change, bot_id=1):
+    bot_id = bot_id or 1
     old_balance = get_bot_cashier(cursor, bot_id)
-    new_balance = max(0.0, old_balance + amount_change)
+    new_balance = max(0.0, old_balance + float(amount_change))
+    
     cursor.execute("UPDATE bots SET cashier_balance = ? WHERE id = ?", (new_balance, bot_id))
+    if cursor.rowcount == 0:
+        cursor.execute("INSERT OR REPLACE INTO bots (id, bot_name, cashier_balance) VALUES (?, ?, ?)", 
+                       (bot_id, f"AUREX Bot {bot_id}", new_balance))
+                       
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('cashier_balance', ?)", (str(new_balance),))
     return old_balance, new_balance
 
@@ -371,7 +382,7 @@ def check_maintenance():
         m = get_setting(cursor, 'maintenance', 'off')
         conn.close()
         if m == 'on' or m == '1':
-            return jsonify({'error': 'الموقع في وضع الصيانة حالياً'}), 533
+            return jsonify({'status': 'error', 'error': 'الموقع في وضع الصيانة حالياً', 'message': 'الموقع في وضع الصيانة حالياً'}), 200
 
 # --- الصفحات ---
 @app.route('/')
@@ -396,7 +407,7 @@ def login_site():
     password = str(data.get('password', '')).strip()
 
     if not username or not password:
-        return jsonify({'error': 'يرجى إدخال اسم المستخدم وكلمة المرور'}), 400
+        return jsonify({'status': 'error', 'error': 'يرجى إدخال اسم المستخدم وكلمة المرور', 'message': 'يرجى إدخال اسم المستخدم وكلمة المرور'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -406,7 +417,7 @@ def login_site():
     conn.close()
 
     if not user:
-        return jsonify({'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
+        return jsonify({'status': 'error', 'error': 'اسم المستخدم أو كلمة المرور غير صحيحة', 'message': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 200
 
     session.permanent = True
     session['user_id'] = user['telegram_id']
@@ -433,7 +444,7 @@ def logout_site():
 def get_user_account():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر التعرف على حساب المستخدم'}), 400
+        return jsonify({'status': 'error', 'error': 'تعذر التعرف على حساب المستخدم', 'message': 'تعذر التعرف على حساب المستخدم'}), 200
     
     conn = get_db_connection()
     user = conn.execute("""
@@ -445,9 +456,10 @@ def get_user_account():
     """, (user_id, str(user_id))).fetchone()
     conn.close()
     if not user:
-        return jsonify({'error': 'الحساب غير موجود'}), 404
+        return jsonify({'status': 'error', 'error': 'الحساب غير موجود', 'message': 'الحساب غير موجود'}), 200
         
     res = dict(user)
+    res['status'] = 'success'
     res['free_spins'] = res['free_spins'] if res['free_spins'] is not None else 0
     res['spins'] = res['free_spins']
     res['freeSpins'] = res['free_spins']
@@ -461,7 +473,7 @@ def get_user_account():
 def get_spins_status():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر تحديد آيدي المستخدم، يرجى فتح العجلة من البوت', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0}), 200
+        return jsonify({'status': 'success', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
 
     conn = get_db_connection()
     user = conn.execute("""
@@ -472,7 +484,7 @@ def get_spins_status():
     conn.close()
 
     if not user:
-        return jsonify({'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
+        return jsonify({'status': 'success', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
 
     spins_count = user['free_spins'] if user['free_spins'] is not None else 0
     return jsonify({
@@ -495,7 +507,7 @@ def register_site():
     referred_by = data.get('referred_by')
     
     if len(site_user) < 3 or len(site_pass) < 3:
-        return jsonify({'error': 'اسم المستخدم وكلمة المرور يجب أن يتجاوزا 3 خانات'}), 400
+        return jsonify({'status': 'error', 'error': 'اسم المستخدم وكلمة المرور يجب أن يتجاوزا 3 خانات', 'message': 'اسم المستخدم وكلمة المرور يجب أن يتجاوزا 3 خانات'}), 200
         
     if not raw_tg or not raw_tg.isdigit():
         telegram_id = random.randint(100000000, 999999999)
@@ -508,7 +520,7 @@ def register_site():
     cursor.execute("SELECT * FROM users WHERE LOWER(site_username) = LOWER(?) AND telegram_id != ?", (site_user, telegram_id))
     if cursor.fetchone():
         conn.close()
-        return jsonify({'error': 'اسم المستخدم هذا مأخوذ بالفعل، اختر اسماً آخر'}), 400
+        return jsonify({'status': 'error', 'error': 'اسم المستخدم هذا مأخوذ بالفعل، اختر اسماً آخر', 'message': 'اسم المستخدم هذا مأخوذ بالفعل، اختر اسماً آخر'}), 200
 
     cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id)))
     existing_user = cursor.fetchone()
@@ -559,14 +571,14 @@ def register_site():
         })
     except sqlite3.IntegrityError as e:
         conn.close()
-        return jsonify({'error': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 400
+        return jsonify({'status': 'error', 'error': f'حدث خطأ في قاعدة البيانات: {str(e)}', 'message': f'حدث خطأ في قاعدة البيانات: {str(e)}'}), 200
 
 # --- البونص الترحيبي ---
 @app.route('/api/bonus/welcome', methods=['POST'])
 def claim_welcome_bonus():
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
-        return jsonify({'error': 'لم يتم التعرف على الحساب'}), 401
+        return jsonify({'status': 'error', 'error': 'لم يتم التعرف على الحساب', 'message': 'لم يتم التعرف على الحساب'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -574,11 +586,11 @@ def claim_welcome_bonus():
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     if not user:
         conn.close()
-        return jsonify({'error': 'المستخدم غير موجود'}), 404
+        return jsonify({'status': 'error', 'error': 'المستخدم غير موجود', 'message': 'المستخدم غير موجود'}), 200
 
     if user['got_welcome_bonus'] == 1:
         conn.close()
-        return jsonify({'error': 'لقد حصلت على البونص الترحيبي سابقاً'}), 400
+        return jsonify({'status': 'error', 'error': 'لقد حصلت على البونص الترحيبي سابقاً', 'message': 'لقد حصلت على البونص الترحيبي سابقاً'}), 200
 
     try:
         bonus_amount = float(get_setting(cursor, 'welcome_bonus', '10.0'))
@@ -587,14 +599,14 @@ def claim_welcome_bonus():
 
     if bonus_amount <= 0:
         conn.close()
-        return jsonify({'error': 'لا يوجد بونص ترحيبي متاح حالياً'}), 400
+        return jsonify({'status': 'error', 'error': 'لا يوجد بونص ترحيبي متاح حالياً', 'message': 'لا يوجد بونص ترحيبي متاح حالياً'}), 200
 
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
     if cashier < bonus_amount:
         conn.close()
-        return jsonify({'error': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً', 'message': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً'}), 200
 
     # خصم البونص فعلياً من الكاشيرة
     old_cashier, new_cashier = update_bot_cashier(cursor, -bonus_amount, bot_id)
@@ -625,7 +637,7 @@ def claim_welcome_bonus():
 def transfer_to_site():
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
-        return jsonify({'error': 'تعذر التعرف على المعرف'}), 401
+        return jsonify({'status': 'error', 'error': 'تعذر التعرف على المعرف', 'message': 'تعذر التعرف على المعرف'}), 200
 
     data = get_req_data()
     try:
@@ -634,7 +646,7 @@ def transfer_to_site():
         amount = 0
 
     if amount <= 0:
-        return jsonify({'error': 'مبلغ التحويل غير صالح'}), 400
+        return jsonify({'status': 'error', 'error': 'مبلغ التحويل غير صالح', 'message': 'مبلغ التحويل غير صالح'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -642,7 +654,7 @@ def transfer_to_site():
 
     if not user or (user['bot_balance'] or 0.0) < amount:
         conn.close()
-        return jsonify({'error': 'رصيد البوت غير كافٍ للتحويل إلى الموقع'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد البوت غير كافٍ للتحويل إلى الموقع', 'message': 'رصيد البوت غير كافٍ للتحويل إلى الموقع'}), 200
 
     new_bot_bal = (user['bot_balance'] or 0.0) - amount
     new_site_bal = (user['site_balance'] or 0.0) + amount
@@ -663,7 +675,7 @@ def transfer_to_site():
 def transfer_to_bot():
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
-        return jsonify({'error': 'تعذر التعرف على المعرف'}), 401
+        return jsonify({'status': 'error', 'error': 'تعذر التعرف على المعرف', 'message': 'تعذر التعرف على المعرف'}), 200
 
     data = get_req_data()
     try:
@@ -672,7 +684,7 @@ def transfer_to_bot():
         amount = 0
 
     if amount <= 0:
-        return jsonify({'error': 'مبلغ السحب غير صالح'}), 400
+        return jsonify({'status': 'error', 'error': 'مبلغ السحب غير صالح', 'message': 'مبلغ السحب غير صالح'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -680,7 +692,7 @@ def transfer_to_bot():
 
     if not user or (user['site_balance'] or 0.0) < amount:
         conn.close()
-        return jsonify({'error': 'رصيد الموقع غير كافٍ للسحب إلى البوت'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد الموقع غير كافٍ للسحب إلى البوت', 'message': 'رصيد الموقع غير كافٍ للسحب إلى البوت'}), 200
 
     new_site_bal = (user['site_balance'] or 0.0) - amount
     new_bot_bal = (user['bot_balance'] or 0.0) + amount
@@ -703,7 +715,7 @@ def transfer_to_bot():
 def play_slot_game():
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
-        return jsonify({'error': 'تعذر التعرف على المعرف الخاص بك'}), 401
+        return jsonify({'status': 'error', 'error': 'تعذر التعرف على المعرف الخاص بك', 'message': 'تعذر التعرف على المعرف الخاص بك'}), 200
 
     data = get_req_data()
     try:
@@ -712,7 +724,7 @@ def play_slot_game():
         bet = 0
 
     if bet <= 0:
-        return jsonify({'error': 'مبلغ الرهان غير صالح'}), 400
+        return jsonify({'status': 'error', 'error': 'مبلغ الرهان غير صالح', 'message': 'مبلغ الرهان غير صالح'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -720,7 +732,7 @@ def play_slot_game():
 
     if not user or (user['site_balance'] or 0.0) < bet:
         conn.close()
-        return jsonify({'error': 'رصيد الموقع غير كافٍ للرهان'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد الموقع غير كافٍ للرهان', 'message': 'رصيد الموقع غير كافٍ للرهان'}), 200
 
     try:
         rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
@@ -761,7 +773,7 @@ def play_slot_game():
 def wheel_spin():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'عذراً، يجب تشغيل العجلة عبر بوت التلغرام حصراً'}), 400
+        return jsonify({'status': 'error', 'error': 'عذراً، يجب تشغيل العجلة عبر بوت التلغرام حصراً', 'message': 'عذراً، يجب تشغيل العجلة عبر بوت التلغرام حصراً'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -780,17 +792,21 @@ def wheel_spin():
 
     is_free_spin = False
     spin_cost = 10.0
+    bot_id = user['bot_id'] or 1
 
+    # التحكم بقواعد الكاشيرة حسب نوع اللفة (مجانية أم مدفوعة)
     if current_free_spins > 0:
         is_free_spin = True
         cursor.execute("UPDATE users SET free_spins = MAX(0, COALESCE(free_spins, 0) - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
+        # اللفة المجانية: لا يتم إضافة سعر اللفة إلى الكاشيرة مطلقاً
     else:
         if current_bot_balance >= spin_cost:
             cursor.execute("UPDATE users SET bot_balance = MAX(0.0, COALESCE(bot_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
-            update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
+            # اللفة المدفوعة من رصيد البوت: يتم إضافة سعر اللفة للكاشيرة
+            update_bot_cashier(cursor, spin_cost, bot_id)
         else:
             conn.close()
-            return jsonify({'error': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة'}), 400
+            return jsonify({'status': 'error', 'error': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة', 'message': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة'}), 200
 
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
@@ -803,9 +819,7 @@ def wheel_spin():
 
     chosen_reward = random.choices(numbers, weights=weights, k=1)[0]
 
-    bot_id = user['bot_id'] or 1
-    cashier_before, cashier_after = get_bot_cashier(cursor, bot_id), get_bot_cashier(cursor, bot_id)
-
+    cashier_before = get_bot_cashier(cursor, bot_id)
     if chosen_reward > cashier_before:
         chosen_reward = 0
 
@@ -813,6 +827,7 @@ def wheel_spin():
 
     if chosen_reward > 0:
         cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
+        # عند الفوز: يتم خصم جائزة الفوز من الكاشيرة بشكل فعلي
         cashier_before, cashier_after = update_bot_cashier(cursor, -chosen_reward, bot_id)
 
         user_name_str = user['site_username'] or user['username'] or str(user_id)
@@ -857,10 +872,10 @@ def create_code():
         max_uses = int(data.get('max_uses', 1))
         bot_id = int(data.get('bot_id', 1))
     except (ValueError, TypeError):
-        return jsonify({'error': 'بيانات الأرقام غير صالحة'}), 400
+        return jsonify({'status': 'error', 'error': 'بيانات الأرقام غير صالحة', 'message': 'بيانات الأرقام غير صالحة'}), 200
 
     if amount <= 0 or max_uses <= 0:
-        return jsonify({'error': 'يرجى إدخال مبلغ وعدد استخدامات صالحين'}), 400
+        return jsonify({'status': 'error', 'error': 'يرجى إدخال مبلغ وعدد استخدامات صالحين', 'message': 'يرجى إدخال مبلغ وعدد استخدامات صالحين'}), 200
 
     if not code:
         code = "AUREX-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -873,7 +888,7 @@ def create_code():
 
     if current_cashier < total_cost:
         conn.close()
-        return jsonify({'error': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}'}), 400
+        return jsonify({'status': 'error', 'error': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}', 'message': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}'}), 200
 
     try:
         cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, active, bot_id) VALUES (?, ?, ?, 0, 1, ?)",
@@ -894,7 +909,7 @@ def create_code():
         })
     except sqlite3.IntegrityError:
         conn.close()
-        return jsonify({'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
+        return jsonify({'status': 'error', 'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر', 'message': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 200
 
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
@@ -903,14 +918,14 @@ def use_code():
     code_text = str(data.get('code', '')).strip().upper()
 
     if not telegram_id:
-        return jsonify({'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 400
+        return jsonify({'status': 'error', 'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود', 'message': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 200
     if not code_text:
-        return jsonify({'error': 'يرجى إدخال كود الهدية'}), 400
+        return jsonify({'status': 'error', 'error': 'يرجى إدخال كود الهدية', 'message': 'يرجى إدخال كود الهدية'}), 200
 
     try:
         telegram_id = int(telegram_id)
     except (ValueError, TypeError):
-        return jsonify({'error': 'معرف المستخدم غير صالح'}), 400
+        return jsonify({'status': 'error', 'error': 'معرف المستخدم غير صالح', 'message': 'معرف المستخدم غير صالح'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -925,11 +940,23 @@ def use_code():
             conn.commit()
             user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
 
-        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ? AND active = 1", (code_text,)).fetchone()
+        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ?", (code_text,)).fetchone()
         
         if not code_obj:
             conn.close()
-            return jsonify({'error': 'الكود غير صالح أو غير موجود أو تم إلغاؤه'}), 400
+            return jsonify({
+                'status': 'error',
+                'error': 'الكود غير صالح أو غير موجود أو تم إلغاؤه',
+                'message': 'الكود غير صالح أو غير موجود أو تم إلغاؤه'
+            }), 200
+
+        if code_obj['active'] != 1:
+            conn.close()
+            return jsonify({
+                'status': 'error',
+                'error': 'هذا الكود تم إلغاؤه أو غير مفعل حالياً',
+                'message': 'هذا الكود تم إلغاؤه أو غير مفعل حالياً'
+            }), 200
 
         used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
         max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
@@ -937,12 +964,20 @@ def use_code():
 
         if used_count >= max_uses:
             conn.close()
-            return jsonify({'error': 'تم استخدام هذا الكود بالكامل للعدد المسموح به'}), 400
+            return jsonify({
+                'status': 'error',
+                'error': 'تم استخدام هذا الكود بالكامل للعدد المسموح به',
+                'message': 'تم استخدام هذا الكود بالكامل للعدد المسموح به'
+            }), 200
 
         used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
         if used:
             conn.close()
-            return jsonify({'error': 'لقد استخدمت هذا الكود سابقاً'}), 400
+            return jsonify({
+                'status': 'error',
+                'error': 'لقد استخدمت هذا الكود سابقاً',
+                'message': 'لقد استخدمت هذا الكود سابقاً'
+            }), 200
 
         real_code = code_obj['code']
         new_used_count = used_count + 1
@@ -982,11 +1017,18 @@ def use_code():
             'amount': amount
         })
     except Exception as e:
-        conn.rollback()
-        conn.close()
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
         print(f"Error handling code use: {e}", flush=True)
         traceback.print_exc()
-        return jsonify({'error': f'حدث خطأ أثناء معالجة الكود: {str(e)}'}), 500
+        return jsonify({
+            'status': 'error',
+            'error': f'حدث خطأ أثناء معالجة الكود: {str(e)}',
+            'message': f'حدث خطأ أثناء معالجة الكود: {str(e)}'
+        }), 200
 
 # --- مسارات إدارة الأكواد من لوحة الأدمن ---
 
@@ -1008,7 +1050,7 @@ def admin_deactivate_code():
     code_text = str(data.get('code', '')).strip().upper()
 
     if not code_text:
-        return jsonify({'error': 'يرجى تحديد الكود المراد إلغاؤه'}), 400
+        return jsonify({'status': 'error', 'error': 'يرجى تحديد الكود المراد إلغاؤه', 'message': 'يرجى تحديد الكود المراد إلغاؤه'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1016,11 +1058,11 @@ def admin_deactivate_code():
     code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ?", (code_text,)).fetchone()
     if not code_obj:
         conn.close()
-        return jsonify({'error': 'الكود غير موجود'}), 404
+        return jsonify({'status': 'error', 'error': 'الكود غير موجود', 'message': 'الكود غير موجود'}), 200
 
     if code_obj['active'] == 0:
         conn.close()
-        return jsonify({'error': 'الكود ملغى بالفعل'}), 400
+        return jsonify({'status': 'error', 'error': 'الكود ملغى بالفعل', 'message': 'الكود ملغى بالفعل'}), 200
 
     max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
     used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
@@ -1068,7 +1110,7 @@ def admin_update_user_balance():
         amount = 0
 
     if not telegram_id or amount <= 0 or action not in ['add', 'deduct']:
-        return jsonify({'error': 'بيانات التعديل غير صالحة'}), 400
+        return jsonify({'status': 'error', 'error': 'بيانات التعديل غير صالحة', 'message': 'بيانات التعديل غير صالحة'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1076,7 +1118,7 @@ def admin_update_user_balance():
     user = cursor.execute("SELECT bot_id FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     if not user:
         conn.close()
-        return jsonify({'error': 'المستخدم غير موجود'}), 404
+        return jsonify({'status': 'error', 'error': 'المستخدم غير موجود', 'message': 'المستخدم غير موجود'}), 200
 
     bot_id = user['bot_id'] or 1
     col = "site_balance" if balance_type == 'site' else "bot_balance"
@@ -1107,7 +1149,7 @@ def admin_grant_spins_user():
         spins = 1
 
     if not target_user:
-        return jsonify({'error': 'يرجى تحديد معرف المستخدم أو اسم الحساب'}), 400
+        return jsonify({'status': 'error', 'error': 'يرجى تحديد معرف المستخدم أو اسم الحساب', 'message': 'يرجى تحديد معرف المستخدم أو اسم الحساب'}), 200
 
     target_str = str(target_user).strip()
 
@@ -1147,7 +1189,7 @@ def admin_add_cashier():
         bot_id = int(data.get('bot_id', 1))
         amount = float(data.get('amount', 0))
     except (ValueError, TypeError):
-        return jsonify({'error': 'بيانات القيمة غير صالحة'}), 400
+        return jsonify({'status': 'error', 'error': 'بيانات القيمة غير صالحة', 'message': 'بيانات القيمة غير صالحة'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1203,7 +1245,7 @@ def admin_settings():
 def create_transaction_request():
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
-        return jsonify({'error': 'تعذر التعرف على آيدي المستخدم'}), 401
+        return jsonify({'status': 'error', 'error': 'تعذر التعرف على آيدي المستخدم', 'message': 'تعذر التعرف على آيدي المستخدم'}), 200
 
     data = get_req_data()
     tx_type = data.get('type')
@@ -1213,7 +1255,7 @@ def create_transaction_request():
         amount = 0
 
     if tx_type not in ['deposit', 'withdraw'] or amount <= 0:
-        return jsonify({'error': 'بيانات المعاملة غير صالحة'}), 400
+        return jsonify({'status': 'error', 'error': 'بيانات المعاملة غير صالحة', 'message': 'بيانات المعاملة غير صالحة'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1221,11 +1263,11 @@ def create_transaction_request():
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     if not user:
         conn.close()
-        return jsonify({'error': 'المستخدم غير موجود'}), 404
+        return jsonify({'status': 'error', 'error': 'المستخدم غير موجود', 'message': 'المستخدم غير موجود'}), 200
 
     if tx_type == 'withdraw' and (user['site_balance'] or 0.0) < amount:
         conn.close()
-        return jsonify({'error': 'رصيد الموقع غير كافٍ لطلب السحب'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد الموقع غير كافٍ لطلب السحب', 'message': 'رصيد الموقع غير كافٍ لطلب السحب'}), 200
 
     cursor.execute('''
         INSERT INTO transactions (telegram_id, bot_id, type, method, amount, tx_number, status)
@@ -1244,10 +1286,10 @@ def process_transaction():
         tx_id = int(data.get('tx_id', 0))
         action = data.get('action')
     except (ValueError, TypeError):
-        return jsonify({'error': 'بيانات غير صالحة'}), 400
+        return jsonify({'status': 'error', 'error': 'بيانات غير صالحة', 'message': 'بيانات غير صالحة'}), 200
 
     if action not in ['approve', 'reject']:
-        return jsonify({'error': 'الإجراء غير صالح'}), 400
+        return jsonify({'status': 'error', 'error': 'الإجراء غير صالح', 'message': 'الإجراء غير صالح'}), 200
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1255,7 +1297,7 @@ def process_transaction():
     tx = cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
     if not tx or tx['status'] != 'pending':
         conn.close()
-        return jsonify({'error': 'المعاملة غير موجودة أو معالجة سابقاً'}), 400
+        return jsonify({'status': 'error', 'error': 'المعاملة غير موجودة أو معالجة سابقاً', 'message': 'المعاملة غير موجودة أو معالجة سابقاً'}), 200
 
     bot_id = tx['bot_id'] or 1
 
