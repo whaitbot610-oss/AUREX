@@ -2,352 +2,347 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>عجلة الحظ VIP - AUREX</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AUREX Lucky Wheel</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+            user-select: none;
         }
+
         body {
-            background-color: #0d0f12;
+            background: radial-gradient(circle at center, #1b0203 0%, #080102 60%, #000000 100%);
             color: #ffffff;
+            text-align: center;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start;
+            justify-content: center;
             min-height: 100vh;
-            padding: 20px 15px;
-        }
-        .title {
-            color: #f39c12;
-            font-size: 24px;
-            font-weight: bold;
-            text-align: center;
-            width: 100%;
-            margin-bottom: 20px;
-            text-shadow: 0 0 10px rgba(243, 156, 18, 0.4);
-        }
-        .stats-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid #f39c12;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 320px;
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
             padding: 15px;
-            margin-bottom: 25px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            overflow-x: hidden;
         }
-        .stat-item {
-            text-align: center;
+
+        .header-brand {
+            margin-bottom: 15px;
         }
-        .stat-title {
+
+        h1 {
+            color: #e50914;
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-shadow: 0 0 15px rgba(229, 9, 20, 0.7), 0 0 30px rgba(212, 175, 55, 0.4);
+        }
+
+        p.subtitle {
             font-size: 13px;
-            color: #aaa;
-            margin-bottom: 5px;
+            color: #d4af37;
+            letter-spacing: 1px;
+            margin-top: 3px;
         }
-        .stat-value {
-            font-size: 22px;
-            font-weight: bold;
-            color: #f39c12;
-        }
+
         .wheel-container {
             position: relative;
+            width: 330px;
+            height: 330px;
+            margin: 15px auto;
+            border-radius: 50%;
+            box-shadow: 0 0 35px rgba(229, 9, 20, 0.5), inset 0 0 15px rgba(212, 175, 55, 0.5);
+            padding: 5px;
+            background: linear-gradient(145deg, #d4af37, #5c0206, #d4af37);
+        }
+
+        #canvas {
             width: 320px;
             height: 320px;
-            margin-bottom: 30px;
+            border-radius: 50%;
+            background-color: #0d0d0d;
+            display: block;
         }
+
         .pointer {
             position: absolute;
-            top: -15px;
+            top: -12px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 15px solid transparent;
-            border-right: 15px solid transparent;
-            border-top: 25px solid #f39c12;
+            border-left: 16px solid transparent;
+            border-right: 16px solid transparent;
+            border-top: 32px solid #d4af37;
             z-index: 10;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.9));
         }
-        .wheel {
-            width: 100%;
-            height: 100%;
+
+        .pointer::after {
+            content: '';
+            position: absolute;
+            top: -34px;
+            left: -8px;
+            width: 16px;
+            height: 16px;
+            background: #e50914;
             border-radius: 50%;
-            border: 6px solid #f39c12;
-            box-shadow: 0 0 20px rgba(243, 156, 18, 0.5);
-            transition: transform 4s cubic-bezier(0.15, 0.99, 0.35, 1);
+            box-shadow: 0 0 8px #e50914;
         }
-        .center-hub {
+
+        .center-btn {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 60px;
-            height: 60px;
-            background: #f39c12;
+            width: 70px;
+            height: 70px;
+            background: radial-gradient(circle, #e50914 0%, #700004 70%, #300000 100%);
+            border: 3px solid #d4af37;
             border-radius: 50%;
+            color: #ffffff;
+            font-weight: 900;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 5;
+            box-shadow: 0 0 20px rgba(0,0,0,0.9), inset 0 0 10px rgba(212, 175, 55, 0.6);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #000;
-            font-weight: bold;
-            font-size: 11px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.8);
-            border: 2px solid #fff;
-            z-index: 5;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .spin-btn {
-            background: linear-gradient(135deg, #f39c12, #d35400);
-            color: #fff;
-            border: none;
+
+        .center-btn:active {
+            transform: translate(-50%, -50%) scale(0.92);
+        }
+
+        .info-card {
+            background: rgba(20, 5, 7, 0.85);
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            border-radius: 16px;
+            padding: 14px 20px;
             width: 100%;
-            max-width: 320px;
-            padding: 16px;
+            max-width: 330px;
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-around;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-item span.label {
+            font-size: 11px;
+            color: #aaa;
+            margin-bottom: 2px;
+        }
+
+        .info-item span.val {
             font-size: 18px;
             font-weight: bold;
-            border-radius: 25px;
-            cursor: pointer;
-            box-shadow: 0 5px 15px rgba(243, 156, 18, 0.4);
-            transition: all 0.2s ease;
+            color: #d4af37;
+            text-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
         }
-        .spin-btn:active {
-            transform: scale(0.98);
-        }
-        .spin-btn:disabled {
-            background: #555;
-            box-shadow: none;
-            cursor: not-allowed;
-        }
-        .alert-box {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #27ae60;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            display: none;
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            text-align: center;
+
+        #result-modal {
+            margin-top: 15px;
+            font-size: 16px;
             font-weight: bold;
+            min-height: 28px;
+            transition: all 0.3s ease;
+        }
+
+        .win-msg {
+            color: #2ecc71;
+            text-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+            animation: pulse 1s infinite alternate;
+        }
+
+        .lose-msg {
+            color: #e74c3c;
+            text-shadow: 0 0 10px rgba(231, 76, 60, 0.5);
+        }
+
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.05); }
         }
     </style>
 </head>
 <body>
 
-    <div id="alert" class="alert-box"></div>
-
-    <div class="title">🎡 عجلة الحظ VIP</div>
-
-    <div class="stats-card">
-        <div class="stat-item">
-            <div class="stat-title">اللفات المجانية</div>
-            <div class="stat-value" id="free-spins">0</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-title">رصيد البوت</div>
-            <div class="stat-value" id="bot-balance">0.00</div>
-        </div>
+    <div class="header-brand">
+        <h1>AUREX WHEEL</h1>
+        <p class="subtitle">عجلة الحظ التفاعلية الفاخرة</p>
     </div>
 
     <div class="wheel-container">
         <div class="pointer"></div>
-        <canvas id="wheelCanvas" width="320" height="320" class="wheel"></canvas>
-        <div class="center-hub">AUREX</div>
+        <canvas id="canvas" width="320" height="320"></canvas>
+        <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
     </div>
 
-    <button id="spin-btn" class="spin-btn" onclick="spinWheel()">أدر العجلة الآن 🎲</button>
+    <div id="result-modal"></div>
+
+    <div class="info-card">
+        <div class="info-item">
+            <span class="label">اللفات المتاحة</span>
+            <span class="val" id="spinsCount">--</span>
+        </div>
+        <div class="info-item">
+            <span class="label">رصيد البوت</span>
+            <span class="val" id="userBal">--</span>
+        </div>
+    </div>
 
     <script>
         const tg = window.Telegram ? window.Telegram.WebApp : null;
-        if (tg) {
-            tg.ready();
-            tg.expand();
+        if (tg) tg.expand();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        let userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : null;
+        if (!userId) {
+            userId = urlParams.get("telegram_id") || urlParams.get("user_id");
         }
+        if (userId === "null" || userId === "undefined") userId = null;
 
-        function getTelegramId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('telegram_id')) return urlParams.get('telegram_id');
-            if (urlParams.get('user_id')) return urlParams.get('user_id');
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                return tg.initDataUnsafe.user.id;
-            }
-            return null;
-        }
-
-        const segments = [
-            { label: "0", color: "#8b0000" },
-            { label: "1000", color: "#1a1a1a" },
-            { label: "500", color: "#8b0000" },
-            { label: "100", color: "#1a1a1a" },
-            { label: "50", color: "#8b0000" },
-            { label: "25", color: "#1a1a1a" },
-            { label: "15", color: "#8b0000" },
-            { label: "10", color: "#1a1a1a" },
-            { label: "5", color: "#8b0000" }
-        ];
-
-        const canvas = document.getElementById('wheelCanvas');
-        const ctx = canvas.getContext('2d');
-        const numSegments = segments.length;
-        const anglePerSegment = (2 * Math.PI) / numSegments;
+        const values = [0, 5, 10, 15, 25, 50, 100, 500, 10000];
+        const numSlices = values.length;
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        let currentAngle = 0;
+        let isSpinning = false;
 
         function drawWheel() {
-            for (let i = 0; i < numSegments; i++) {
-                const angle = i * anglePerSegment;
+            const radius = 160;
+            const sliceAngle = (2 * Math.PI) / numSlices;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < numSlices; i++) {
+                const angle = currentAngle + i * sliceAngle;
                 ctx.beginPath();
-                ctx.fillStyle = segments[i].color;
-                ctx.moveTo(160, 160);
-                ctx.arc(160, 160, 160, angle, angle + anglePerSegment);
-                ctx.lineTo(160, 160);
+                ctx.moveTo(radius, radius);
+                ctx.arc(radius, radius, radius, angle, angle + sliceAngle);
+                ctx.closePath();
+
+                // التبديل بين الأحمر الداكن والأسود الداكن
+                ctx.fillStyle = (i % 2 === 0) ? "#120203" : "#80050a";
                 ctx.fill();
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#f39c12';
+
+                // إطار ذهبي لكل شريحة
+                ctx.strokeStyle = "#d4af37";
+                ctx.lineWidth = 1.5;
                 ctx.stroke();
 
+                // رسم النص
                 ctx.save();
-                ctx.translate(160, 160);
-                ctx.rotate(angle + anglePerSegment / 2);
+                ctx.translate(radius, radius);
+                ctx.rotate(angle + sliceAngle / 2);
                 ctx.textAlign = "right";
-                ctx.fillStyle = "#ffffff";
-                ctx.font = "bold 16px Arial";
-                ctx.fillText(segments[i].label, 140, 5);
+                ctx.fillStyle = (values[i] === 10000 || values[i] === 500) ? "#d4af37" : "#ffffff";
+                ctx.font = "bold 13px Cairo, Arial";
+                ctx.fillText(values[i] + " NSP", radius - 15, 5);
                 ctx.restore();
             }
         }
-        drawWheel();
 
-        function getAuthHeaders() {
-            const headers = { 'Content-Type': 'application/json' };
-            const tgId = getTelegramId();
-            if (tgId) {
-                headers['X-Telegram-User-Id'] = tgId;
+        async function fetchUserData() {
+            if (!userId) {
+                document.getElementById("result-modal").innerText = "⚠️ افتح العجلة عبر البوت مباشرة.";
+                return;
             }
-            if (tg && tg.initData) {
-                headers['X-Telegram-Init-Data'] = tg.initData;
-            }
-            return headers;
-        }
-
-        function showAlert(msg, isError = false) {
-            const el = document.getElementById('alert');
-            el.innerText = msg;
-            el.style.background = isError ? '#e74c3c' : '#27ae60';
-            el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 3500);
-        }
-
-        let currentSpinsCount = 0;
-        let currentBotBal = 0;
-
-        async function fetchAccountData() {
             try {
-                const tgId = getTelegramId();
-                let url = '/api/wheel/status';
-                if (tgId) {
-                    url += '?telegram_id=' + tgId;
-                }
-
-                const res = await fetch(url, {
-                    method: 'GET',
-                    headers: getAuthHeaders()
-                });
-
+                const res = await fetch('/api/get-spins?telegram_id=' + userId);
                 const data = await res.json();
-                if (res.ok) {
-                    currentSpinsCount = data.free_spins !== undefined ? data.free_spins : (data.spins || 0);
-                    currentBotBal = data.bot_balance !== undefined ? data.bot_balance : 0;
-
-                    document.getElementById('free-spins').innerText = currentSpinsCount;
-                    document.getElementById('bot-balance').innerText = typeof currentBotBal === 'number' ? currentBotBal.toFixed(2) : currentBotBal;
+                if (data.status === 'success' || data.free_spins !== undefined) {
+                    document.getElementById("spinsCount").innerText = data.free_spins || 0;
+                    document.getElementById("userBal").innerText = (data.bot_balance || 0).toFixed(2) + " NSP";
+                    document.getElementById("result-modal").innerText = "";
                 }
-            } catch (err) {
-                console.error("Fetch error:", err);
+            } catch (e) {
+                document.getElementById("result-modal").innerText = "❌ تعذر الاتصال بالسيرفر";
             }
         }
 
-        let isSpinning = false;
-        let currentRotation = 0;
-
-        async function spinWheel() {
-            if (isSpinning) return;
-
-            const spinBtn = document.getElementById('spin-btn');
-            spinBtn.disabled = true;
+        async function startSpin() {
+            if (isSpinning || !userId) return;
+            isSpinning = true;
+            document.getElementById("spinBtn").disabled = true;
+            document.getElementById("result-modal").innerText = "";
 
             try {
-                const tgId = getTelegramId();
-                let url = '/api/wheel/spin';
-                const bodyData = {};
-                if (tgId) {
-                    bodyData.telegram_id = tgId;
-                }
-
-                const res = await fetch(url, {
+                const res = await fetch('/api/wheel/spin', {
                     method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify(bodyData)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: userId, user_id: userId })
                 });
-
                 const data = await res.json();
 
-                if (!res.ok) {
-                    showAlert(data.error || 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة', true);
-                    spinBtn.disabled = false;
+                if (data.status !== 'success' && !data.prize_index && data.prize_index !== 0) {
+                    document.getElementById("result-modal").innerHTML = `<span class="lose-msg">❌ ${data.error || "عذراً، حدث خطأ!"}</span>`;
+                    isSpinning = false;
+                    document.getElementById("spinBtn").disabled = false;
                     return;
                 }
 
-                isSpinning = true;
-                const reward = data.reward;
+                const targetIndex = data.prize_index;
+                const sliceAngle = (2 * Math.PI) / numSlices;
                 
-                let rewardIndex = segments.findIndex(s => parseInt(s.label) === reward);
-                if (rewardIndex === -1) rewardIndex = 0;
+                const targetAngle = (1.5 * Math.PI) - (targetIndex * sliceAngle) - (sliceAngle / 2);
+                const extraRounds = 7 * 2 * Math.PI;
+                const startAngle = currentAngle;
+                const normalizedCurrent = currentAngle % (2 * Math.PI);
+                let diff = targetAngle - normalizedCurrent;
+                if (diff < 0) diff += 2 * Math.PI;
+                const finalAngle = startAngle + extraRounds + diff;
 
-                const segmentAngleDeg = 360 / numSegments;
-                // ضبط دقيق لزاوية الوقوف تحت المؤشر العلوي (عند الزاوية 270)
-                const targetAngleDeg = (270 - (rewardIndex * segmentAngleDeg + segmentAngleDeg / 2) + 360) % 360;
-                
-                // حساب الفارق لضمان الدوران الأمامي المستمر لمسافة 5 دورات على الأقل
-                let delta = targetAngleDeg - (currentRotation % 360);
-                if (delta <= 0) {
-                    delta += 360;
+                let startTimestamp = null;
+                const duration = 5000;
+
+                function animate(timestamp) {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const elapsed = timestamp - startTimestamp;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const easeOut = 1 - Math.pow(1 - progress, 4);
+
+                    currentAngle = startAngle + (finalAngle - startAngle) * easeOut;
+                    drawWheel();
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        currentAngle = finalAngle;
+                        drawWheel();
+                        isSpinning = false;
+                        document.getElementById("spinBtn").disabled = false;
+                        document.getElementById("spinsCount").innerText = data.free_spins_left;
+                        document.getElementById("userBal").innerText = (data.new_bot_balance || 0).toFixed(2) + " NSP";
+
+                        if (data.reward > 0) {
+                            document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
+                        } else {
+                            document.getElementById("result-modal").innerHTML = `<span class="lose-msg">💔 حظ أوفر في المرة القادمة!</span>`;
+                        }
+                    }
                 }
-                const finalRotation = currentRotation + (360 * 5) + delta;
+                requestAnimationFrame(animate);
 
-                canvas.style.transform = `rotate(${finalRotation}deg)`;
-                currentRotation = finalRotation;
-
-                setTimeout(() => {
-                    isSpinning = false;
-                    spinBtn.disabled = false;
-                    showAlert(data.message);
-                    
-                    if (data.free_spins_left !== undefined) {
-                        currentSpinsCount = data.free_spins_left;
-                        document.getElementById('free-spins').innerText = currentSpinsCount;
-                    }
-                    if (data.new_bot_balance !== undefined) {
-                        currentBotBal = data.new_bot_balance;
-                        document.getElementById('bot-balance').innerText = parseFloat(currentBotBal).toFixed(2);
-                    }
-                }, 4000);
-
-            } catch (err) {
-                showAlert('فشل الاتصال بالسيرفر', true);
-                spinBtn.disabled = false;
+            } catch (e) {
+                isSpinning = false;
+                document.getElementById("spinBtn").disabled = false;
+                document.getElementById("result-modal").innerText = "❌ خطأ في الشبكة";
             }
         }
 
-        window.onload = fetchAccountData;
+        drawWheel();
+        fetchUserData();
     </script>
 </body>
 </html>
