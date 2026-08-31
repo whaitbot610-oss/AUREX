@@ -285,8 +285,10 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                 const res = await fetch('/api/get-spins?telegram_id=' + userId);
                 const data = await res.json();
                 if (data.status === 'success' || data.free_spins !== undefined) {
-                    document.getElementById("spinsCount").innerText = data.free_spins || 0;
-                    document.getElementById("userBal").innerText = (data.bot_balance || 0).toFixed(2) + " NSP";
+                    const spinsVal = (data.free_spins !== undefined) ? data.free_spins : (data.spins_count || 0);
+                    const balVal = (data.bot_balance !== undefined) ? data.bot_balance : (data.balance || 0);
+                    document.getElementById("spinsCount").innerText = spinsVal;
+                    document.getElementById("userBal").innerText = parseFloat(balVal).toFixed(2) + " NSP";
                     document.getElementById("result-modal").innerText = "";
                 }
             } catch (e) {
@@ -345,8 +347,11 @@ HTML_WHEEL_PAGE = """<!DOCTYPE html>
                         drawWheel();
                         isSpinning = false;
                         document.getElementById("spinBtn").disabled = false;
-                        document.getElementById("spinsCount").innerText = data.free_spins_left;
-                        document.getElementById("userBal").innerText = (data.new_bot_balance || 0).toFixed(2) + " NSP";
+                        const remSpins = (data.free_spins_left !== undefined) ? data.free_spins_left : data.remaining_spins;
+                        const newBal = (data.new_bot_balance !== undefined) ? data.new_bot_balance : data.new_balance;
+                        
+                        document.getElementById("spinsCount").innerText = remSpins;
+                        document.getElementById("userBal").innerText = parseFloat(newBal || 0).toFixed(2) + " NSP";
 
                         if (data.reward > 0) {
                             document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
@@ -392,15 +397,17 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             if user_id_raw and str(user_id_raw).isdigit():
                 user_id = int(user_id_raw)
                 conn = get_db()
-                u = conn.execute("SELECT spins_count, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+                u = conn.execute("SELECT spins_count, free_spins, balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
                 conn.close()
                 if u:
+                    spins = u['free_spins'] if u['free_spins'] is not None else u['spins_count']
+                    bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
                     res = {
                         "status": "success", 
-                        "free_spins": u['spins_count'], 
-                        "bot_balance": u['balance'],
-                        "spins": u['spins_count'], 
-                        "balance": u['balance']
+                        "free_spins": spins, 
+                        "bot_balance": bal,
+                        "spins": spins, 
+                        "balance": bal
                     }
                     self._send_json(res)
                     return
@@ -454,14 +461,18 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 
                 conn = get_db()
                 cursor = conn.cursor()
-                u = cursor.execute("SELECT spins_count, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+                u = cursor.execute("SELECT spins_count, free_spins, balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
                 
-                if not u or u['spins_count'] <= 0:
+                current_spins = u['free_spins'] if (u and u['free_spins'] is not None) else (u['spins_count'] if u else 0)
+                current_bal = u['bot_balance'] if (u and u['bot_balance'] is not None) else (u['balance'] if u else 0.0)
+
+                if not u or current_spins <= 0:
                     conn.close()
                     self._send_json({"status": "error", "error": "ليس لديك محاولات لعب كافية!", "message": "ليس لديك محاولات لعب كافية!"})
                     return
 
-                cursor.execute("UPDATE users SET spins_count = spins_count - 1 WHERE telegram_id = ?", (user_id,))
+                # تحديث متوافق للحقلين spins_count و free_spins
+                cursor.execute("UPDATE users SET spins_count = spins_count - 1, free_spins = free_spins - 1 WHERE telegram_id = ?", (user_id,))
                 
                 win_rate = float(get_setting('game_win_rate', '30'))
                 cashier_bal = get_cashier_balance()
@@ -482,10 +493,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
                 prize_index = WHEEL_VALUES.index(prize)
                 
-                new_bal = u['balance']
+                new_bal = current_bal
                 if prize > 0:
                     before_cashier, after_cashier = update_cashier(-prize)
-                    cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (prize, user_id))
+                    cursor.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (prize, prize, user_id))
                     conn.commit()
                     new_bal += prize
                     
@@ -497,7 +508,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 else:
                     conn.commit()
 
-                rem_spins = u['spins_count'] - 1
+                rem_spins = current_spins - 1
                 conn.close()
                 
                 self._send_json({
@@ -608,7 +619,7 @@ async def register_account_to_site_api_async(username, password, telegram_id):
     return await asyncio.to_thread(_send)
 
 # ==========================================================
-# 2. إدارة قاعدة البيانات
+# 2. إدارة قاعدة البيانات الموحدة والمتوافقة
 # ==========================================================
 def get_db():
     conn = sqlite3.connect("database.db", check_same_thread=False, timeout=30.0)
@@ -621,18 +632,31 @@ def init_db():
     conn.execute("PRAGMA synchronous=NORMAL;")
     
     cursor = conn.cursor()
+
+    # جدول البوتات لدعم خادم Flask المرفق
+    cursor.execute('''CREATE TABLE IF NOT EXISTS bots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bot_name TEXT NOT NULL,
+        bot_token TEXT UNIQUE,
+        cashier_balance REAL DEFAULT 10000.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         telegram_id INTEGER PRIMARY KEY, 
+        bot_id INTEGER DEFAULT 1,
         username TEXT, 
         site_username TEXT UNIQUE, 
         site_password TEXT, 
         balance REAL DEFAULT 0.0,
+        bot_balance REAL DEFAULT 0.0,
         site_balance REAL DEFAULT 0.0,
         total_spent REAL DEFAULT 0.0,
         deposit_count INTEGER DEFAULT 0,
         withdraw_count INTEGER DEFAULT 0,
         referrals_count INTEGER DEFAULT 0,
         spins_count INTEGER DEFAULT 0,
+        free_spins INTEGER DEFAULT 0,
         referred_by INTEGER,
         got_welcome_bonus INTEGER DEFAULT 0,
         security_passed INTEGER DEFAULT 0,
@@ -645,16 +669,19 @@ def init_db():
 
     existing_cols = [col[1] for col in cursor.execute("PRAGMA table_info(users)").fetchall()]
     required_cols = {
+        'bot_id': 'INTEGER DEFAULT 1',
         'username': 'TEXT',
         'site_username': 'TEXT',
         'site_password': 'TEXT',
         'balance': 'REAL DEFAULT 0.0',
+        'bot_balance': 'REAL DEFAULT 0.0',
         'site_balance': 'REAL DEFAULT 0.0',
         'total_spent': 'REAL DEFAULT 0.0',
         'deposit_count': 'INTEGER DEFAULT 0',
         'withdraw_count': 'INTEGER DEFAULT 0',
         'referrals_count': 'INTEGER DEFAULT 0',
         'spins_count': 'INTEGER DEFAULT 0',
+        'free_spins': 'INTEGER DEFAULT 0',
         'referred_by': 'INTEGER',
         'got_welcome_bonus': 'INTEGER DEFAULT 0',
         'security_passed': 'INTEGER DEFAULT 0',
@@ -797,10 +824,24 @@ async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
     return True
 
 # ==========================================================
-# 3. الأوامر والقوائم الرئيسية
+# 3. الأوامر والقوائم الرئيسية ومعالجة تفاعل التلغرام
 # ==========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
+    # إضافة تفاعل البوت التلقائي (Reaction 🔥) على رسالة start لتلغرام
+    try:
+        await update.message.set_reaction(reaction="🔥")
+    except Exception:
+        try:
+            await context.bot.set_message_reaction(
+                chat_id=update.effective_chat.id, 
+                message_id=update.message.message_id, 
+                reaction=[{"type": "emoji", "emoji": "🔥"}]
+            )
+        except Exception:
+            pass
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -886,9 +927,9 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     site_info = f"<code>{html.escape(db_user['site_username'])}</code>" if db_user and db_user['site_username'] else "❌ غير مربوط"
-    bot_bal = db_user['balance'] if db_user else 0.0
+    bot_bal = (db_user['bot_balance'] if db_user and db_user['bot_balance'] is not None else db_user['balance']) if db_user else 0.0
     site_bal = db_user['site_balance'] if db_user else 0.0
-    spins = db_user['spins_count'] if db_user else 0
+    spins = (db_user['free_spins'] if db_user and db_user['free_spins'] is not None else db_user['spins_count']) if db_user else 0
 
     text = (
         f"👑 <b>منصة AUREX المتطورة</b> 👑\n"
@@ -973,7 +1014,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if bonus_enabled and bonus_amt > 0 and user and user['got_welcome_bonus'] == 0:
             before_cashier, after_cashier = update_cashier(-bonus_amt)
-            cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = 1, balance = balance + ? WHERE telegram_id = ?", (bonus_amt, user_id))
+            cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = 1, balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (bonus_amt, bonus_amt, user_id))
             conn.commit()
             conn.close()
             
@@ -1036,16 +1077,17 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "transfer_to_site":
         conn = get_db()
-        u = conn.execute("SELECT site_username, balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        u = conn.execute("SELECT site_username, balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         conn.close()
         if not u or not u['site_username']:
             await update.effective_chat.send_message("⚠️ يجب إنشاء حساب على الموقع أولاً!", parse_mode="HTML")
             return
         
+        bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
         context.user_data['state'] = 'WAIT_TRANSFER_TO_SITE'
         await update.effective_chat.send_message(
             f"🔄 <b>شحن رصيد للموقع:</b>\n"
-            f"💰 رصيد البوت المتوفر: <b>{u['balance']:.2f} NSP</b>\n\n"
+            f"💰 رصيد البوت المتوفر: <b>{bal:.2f} NSP</b>\n\n"
             f"✍️ أدخل المبلغ المراد تحويله من البوت إلى حسابك بالموقع:",
             parse_mode="HTML"
         )
@@ -1273,7 +1315,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if 'deposit' in r['type']:
                 before_cashier, after_cashier = update_cashier(amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
-                conn.execute("UPDATE users SET balance = balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amt, user_target))
+                conn.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ?, deposit_count = deposit_count + 1 WHERE telegram_id = ?", (amt, amt, user_target))
                 conn.commit()
                 
                 await context.bot.send_message(user_target, f"✅ <b>تم قبول طلب الشحن!</b>\nتم إضافة {amt:.2f} NSP إلى رصيد البوت الخاص بك بنجاح.", parse_mode="HTML")
@@ -1313,7 +1355,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if r and r['status'] == 'pending':
             conn.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (req_id,))
             if 'withdraw' in r['type']:
-                conn.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (r['amount'], r['telegram_id']))
+                conn.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (r['amount'], r['amount'], r['telegram_id']))
             conn.commit()
             
             await context.bot.send_message(r['telegram_id'], f"❌ تم رفض طلب {r['type']} بقيمة {r['amount']} NSP وتم إعادة الرصيد لبوتك.")
@@ -1379,7 +1421,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "adm_stats" and is_admin(user_id):
         conn = get_db()
         tot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        bal = conn.execute("SELECT SUM(balance) FROM users").fetchone()[0] or 0.0
+        bal = conn.execute("SELECT SUM(COALESCE(bot_balance, balance)) FROM users").fetchone()[0] or 0.0
         s_bal = conn.execute("SELECT SUM(site_balance) FROM users").fetchone()[0] or 0.0
         active_today = conn.execute("SELECT COUNT(*) FROM users WHERE datetime(last_active) >= datetime('now', '-1 day')").fetchone()[0]
         conn.close()
@@ -1478,7 +1520,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
-                cursor.execute("UPDATE users SET spins_count = spins_count + 1 WHERE telegram_id = ?", (ref_id,))
+                # إضافة اللفات لحقلي spins_count و free_spins للتوافق الكامل مع الملفين
+                cursor.execute("UPDATE users SET spins_count = spins_count + 1, free_spins = free_spins + 1 WHERE telegram_id = ?", (ref_id,))
                 conn.commit()
                 try:
                     await context.bot.send_message(ref_id, "🎉 <b>ربحت فرصة لعب مجانية!</b>\nقام صديقك بإنشاء حساب على الموقع بنجاح، تم إضافة فرصة لعب إلى حسابك في عجلة الحظ!", parse_mode="HTML")
@@ -1510,13 +1553,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.close()
                 return
 
-            u = cursor.execute("SELECT balance, site_username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-            if u['balance'] < amt:
+            u = cursor.execute("SELECT balance, bot_balance, site_username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+            curr_bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
+            if curr_bal < amt:
                 await update.message.reply_text("❌ رصيدك في البوت غير كافٍ لهذا التحويل!")
                 conn.close()
                 return
 
-            cursor.execute("UPDATE users SET balance = balance - ?, site_balance = site_balance + ? WHERE telegram_id = ?", (amt, amt, user_id))
+            cursor.execute("UPDATE users SET balance = balance - ?, bot_balance = bot_balance - ?, site_balance = site_balance + ? WHERE telegram_id = ?", (amt, amt, amt, user_id))
             conn.commit()
             conn.close()
             context.user_data.clear()
@@ -1539,7 +1583,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.close()
                 return
 
-            cursor.execute("UPDATE users SET site_balance = site_balance - ?, balance = balance + ? WHERE telegram_id = ?", (amt, amt, user_id))
+            cursor.execute("UPDATE users SET site_balance = site_balance - ?, balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, amt, user_id))
             conn.commit()
             conn.close()
             context.user_data.clear()
@@ -1612,8 +1656,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.close()
                 return
 
-            u = cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-            if u['balance'] < amt:
+            u = cursor.execute("SELECT balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+            curr_bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
+            if curr_bal < amt:
                 await update.message.reply_text("❌ رصيدك الحالي في البوت غير كافٍ للسحب!")
                 conn.close()
                 return
@@ -1629,7 +1674,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             method = context.user_data.get('selected_method')
             acc_target = text
 
-            cursor.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amt, user_id))
+            cursor.execute("UPDATE users SET balance = balance - ?, bot_balance = bot_balance - ? WHERE telegram_id = ?", (amt, amt, user_id))
             cursor.execute(
                 "INSERT INTO transactions (telegram_id, type, method, amount, tx_number) VALUES (?, 'withdraw', ?, ?, ?)",
                 (user_id, method, amt, acc_target)
@@ -1693,7 +1738,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, actual_code))
             cursor.execute("UPDATE gift_codes SET used_count = ?, is_active = ? WHERE code = ?", (new_used_count, is_active, actual_code))
-            cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amt, user_id))
+            cursor.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, user_id))
             conn.commit()
             conn.close()
             context.user_data.clear()
@@ -1780,9 +1825,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             elif state == 'ADM_WAIT_SPINS_USER_ID':
                 if text.isdigit():
-                    u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE telegram_id = ? OR site_username = ?", (int(text), text)).fetchone()
+                    u = cursor.execute("SELECT telegram_id, site_username, spins_count, free_spins FROM users WHERE telegram_id = ? OR site_username = ?", (int(text), text)).fetchone()
                 else:
-                    u = cursor.execute("SELECT telegram_id, site_username, spins_count FROM users WHERE site_username = ?", (text,)).fetchone()
+                    u = cursor.execute("SELECT telegram_id, site_username, spins_count, free_spins FROM users WHERE site_username = ?", (text,)).fetchone()
 
                 if not u:
                     await update.message.reply_text("❌ لم يتم العثور على عميل بهذا الآيدي أو اسم المستخدم!")
@@ -1790,7 +1835,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 context.user_data['target_spins_user'] = u['telegram_id']
                 context.user_data['state'] = 'ADM_WAIT_SPINS_COUNT'
-                await update.message.reply_text(f"👤 العميل: <code>{u['telegram_id']}</code>\n🎡 اللفات الحالية: <b>{u['spins_count']}</b>\n\n✍️ أدخل عدد اللفات المراد إضافتها:", parse_mode="HTML")
+                curr_spins = u['free_spins'] if u['free_spins'] is not None else u['spins_count']
+                await update.message.reply_text(f"👤 العميل: <code>{u['telegram_id']}</code>\n🎡 اللفات الحالية: <b>{curr_spins}</b>\n\n✍️ أدخل عدد اللفات المراد إضافتها:", parse_mode="HTML")
                 conn.close()
                 return
 
@@ -1799,7 +1845,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     cnt = int(text)
                     if cnt <= 0: raise ValueError
                     t_user = context.user_data.get('target_spins_user')
-                    cursor.execute("UPDATE users SET spins_count = spins_count + ? WHERE telegram_id = ?", (cnt, t_user))
+                    cursor.execute("UPDATE users SET spins_count = spins_count + ?, free_spins = free_spins + ? WHERE telegram_id = ?", (cnt, cnt, t_user))
                     conn.commit()
                     await update.message.reply_text(f"✅ تم إضافة <b>{cnt}</b> محاولة لعب للعميل <code>{t_user}</code> بنجاح.", parse_mode="HTML")
                     try:
@@ -1838,7 +1884,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             conn.close()
                             return
                     before_cashier, after_cashier = update_cashier(-amt)
-                    cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amt, t_user))
+                    cursor.execute("UPDATE users SET balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (amt, amt, t_user))
                     conn.commit()
                     
                     await update.message.reply_text(
@@ -2014,15 +2060,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     u = cursor.execute("SELECT * FROM users WHERE site_username = ?", (text,)).fetchone()
                 
                 if u:
+                    curr_bal = u['bot_balance'] if u['bot_balance'] is not None else u['balance']
+                    curr_spins = u['free_spins'] if u['free_spins'] is not None else u['spins_count']
                     txt = (
                         f"🔍 <b>تفاصيل حساب العميل:</b>\n\n"
                         f"• الآيدي: <code>{u['telegram_id']}</code>\n"
                         f"• الاسم: {html.escape(u['username'] or '')}\n"
                         f"• اسم الموقع: <code>{html.escape(u['site_username'] or 'غير مربوط')}</code>\n"
                         f"• كلمة المرور: <code>{html.escape(u['site_password'] or 'غير متوفر')}</code>\n"
-                        f"• رصيد البوت: <b>{u['balance']:.2f} NSP</b>\n"
+                        f"• رصيد البوت: <b>{curr_bal:.2f} NSP</b>\n"
                         f"• رصيد الموقع: <b>{u['site_balance']:.2f} NSP</b>\n"
-                        f"• فرص العجلة: <b>{u['spins_count']}</b>\n"
+                        f"• فرص العجلة: <b>{curr_spins}</b>\n"
                         f"• عدد الإحالات: <b>{u['referrals_count']}</b>\n"
                         f"• محظور: <b>{'نعم' if u['is_banned'] else 'لا'}</b>\n"
                         f"• آدمن: <b>{'نعم' if u['is_admin'] else 'لا'}</b>\n"
