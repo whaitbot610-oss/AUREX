@@ -471,7 +471,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                     self._send_json({"status": "error", "error": "ليس لديك محاولات لعب كافية!", "message": "ليس لديك محاولات لعب كافية!"})
                     return
 
-                # تحديث متوافق للحقلين spins_count و free_spins
                 cursor.execute("UPDATE users SET spins_count = spins_count - 1, free_spins = free_spins - 1 WHERE telegram_id = ?", (user_id,))
                 
                 win_rate = float(get_setting('game_win_rate', '30'))
@@ -633,7 +632,6 @@ def init_db():
     
     cursor = conn.cursor()
 
-    # جدول البوتات لدعم خادم Flask المرفق
     cursor.execute('''CREATE TABLE IF NOT EXISTS bots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bot_name TEXT NOT NULL,
@@ -829,7 +827,6 @@ async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    # إضافة تفاعل البوت التلقائي (Reaction 🔥) على رسالة start لتلغرام
     try:
         await update.message.set_reaction(reaction="🔥")
     except Exception:
@@ -1482,17 +1479,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip() if (update.message and update.message.text) else ""
     state = context.user_data.get('state')
 
-    # التعرف التلقائي على أرقام وأكواد الهدايا حتى وإن فُقدت حالة الجلسة
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # التعرف التلقائي على أرقام وأكواد الهدايا من قاعدة البيانات أو الصيغة حتى وإن فُقدت حالة الجلسة
     if not state:
-        if text.upper().startswith("GIFT-") or (len(text) >= 6 and text.isalnum() and not text.isdigit()):
+        check_code = cursor.execute("SELECT code FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (text.strip(),)).fetchone()
+        if check_code or text.upper().startswith("GIFT-") or (len(text) >= 5 and not text.isdigit() and '-' in text):
             state = 'WAIT_GIFT_CODE'
         elif update.message and update.message.photo:
             state = 'WAIT_WIN_SHOT'
         else:
+            conn.close()
             return
-
-    conn = get_db()
-    cursor = conn.cursor()
 
     try:
         if state == 'WAIT_SITE_USER':
@@ -1533,7 +1532,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if u_info and u_info['referred_by']:
                 ref_id = u_info['referred_by']
-                # إضافة اللفات لحقلي spins_count و free_spins للتوافق الكامل مع الملفين
                 cursor.execute("UPDATE users SET spins_count = spins_count + 1, free_spins = free_spins + 1 WHERE telegram_id = ?", (ref_id,))
                 conn.commit()
                 try:
@@ -1988,6 +1986,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     amt = context.user_data.get('gift_amt')
                     count = context.user_data.get('gift_count')
                     
+                    if not amt or not count:
+                        await update.message.reply_text("❌ حدث خطأ في البيانات المخزنة، يرجى البدء من جديد.")
+                        conn.close()
+                        context.user_data.clear()
+                        return
+
                     total_value = amt * count * uses
                     cashier_bal = get_cashier_balance()
                     
@@ -2170,21 +2174,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     except Exception as e:
         logging.error(f"Error handling message: {e}")
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # ==========================================================
-# 6. نقطة البدء وتشغيل البوت (Main Entry Point)
+# 6. تشغيل التطبيق والمعالجات الرئيسي (Application Launcher)
 # ==========================================================
-def main():
+async def main():
     global MAIN_LOOP, bot_app
-
+    MAIN_LOOP = asyncio.get_running_loop()
+    
     init_db()
 
-    # تشغيل خادم صحة الخدمة وعجلة الحظ في مسار مستقل (Thread)
-    server_thread = threading.Thread(target=start_health_check_server, daemon=True)
-    server_thread.start()
-
-    MAIN_LOOP = asyncio.get_event_loop()
+    threading.Thread(target=start_health_check_server, daemon=True).start()
 
     bot_app = Application.builder().token(BOT_TOKEN).build()
 
@@ -2192,8 +2196,15 @@ def main():
     bot_app.add_handler(CallbackQueryHandler(callback_router))
     bot_app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
-    logging.info("Bot is starting...")
-    bot_app.run_polling()
+    logging.info("AUREX BOT is starting...")
+    await bot_app.initialize()
+    await bot_app.start()
+    await bot_app.updater.start_polling(drop_pending_updates=True)
+    
+    await asyncio.Event().wait()
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
