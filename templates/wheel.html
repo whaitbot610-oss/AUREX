@@ -155,7 +155,7 @@
         </div>
         <div class="stat-item">
             <div class="stat-title">رصيد البوت</div>
-            <div class="stat-value" id="bot-balance">0.0</div>
+            <div class="stat-value" id="bot-balance">0.00</div>
         </div>
     </div>
 
@@ -301,7 +301,7 @@
                 const data = await res.json();
 
                 if (!res.ok) {
-                    showAlert(data.error || 'ليس لديك لفات مجانية أو رصيد كافٍ لتدوير العجلة', true);
+                    showAlert(data.error || 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة', true);
                     spinBtn.disabled = false;
                     return;
                 }
@@ -315,8 +315,13 @@
                 const segmentAngleDeg = 360 / numSegments;
                 // ضبط دقيق لزاوية الوقوف تحت المؤشر العلوي (عند الزاوية 270)
                 const targetAngleDeg = (270 - (rewardIndex * segmentAngleDeg + segmentAngleDeg / 2) + 360) % 360;
-                const extraRounds = 360 * 5;
-                const finalRotation = currentRotation + extraRounds + (targetAngleDeg - (currentRotation % 360));
+                
+                // حساب الفارق لضمان الدوران الأمامي المستمر لمسافة 5 دورات على الأقل
+                let delta = targetAngleDeg - (currentRotation % 360);
+                if (delta <= 0) {
+                    delta += 360;
+                }
+                const finalRotation = currentRotation + (360 * 5) + delta;
 
                 canvas.style.transform = `rotate(${finalRotation}deg)`;
                 currentRotation = finalRotation;
