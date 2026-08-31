@@ -1164,9 +1164,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         codes = conn.execute("SELECT * FROM gift_codes WHERE is_active = 1 AND used_count < max_uses LIMIT 20").fetchall()
         conn.close()
         if not codes:
-            await update.effective_chat.send_message("❌ لا يوجد أكواد هدية مفعالة حالياً.")
+            await update.effective_chat.send_message("❌ لا يوجد أكواد هدية مفعلة حالياً.")
             return
-        txt = "🎁 <b>قائمة الأكواد المفعالة:</b>\n\n"
+        txt = "🎁 <b>قائمة الأكواد المفعلة:</b>\n\n"
         for c in codes:
             txt += f"• الكود: <code>{c['code']}</code> | القيمة: <code>{c['amount']} NSP</code> | الاستخدام: <code>{c['used_count']}/{c['max_uses']}</code>\n"
         await update.effective_chat.send_message(txt, parse_mode="HTML")
@@ -1483,48 +1483,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.now()
         u = cursor.execute("SELECT code_restricted_until FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if u and u['code_restricted_until']:
-            res_time = datetime.strptime(u['code_restricted_until'], '%Y-%m-%d %H:%M:%S')
-            if now < res_time:
-                diff = int((res_time - now).total_seconds())
-                await update.message.reply_text(f"🚫 أنت محظور مؤقتاً من تجربة الأكواد بسبب المحاولات الخاطئة. المتبقي: {diff} ثانية.")
-                conn.close()
-                return
+            try:
+                res_time = datetime.strptime(u['code_restricted_until'], '%Y-%m-%d %H:%M:%S')
+                if now < res_time:
+                    diff = int((res_time - now).total_seconds())
+                    await update.message.reply_text(f"🚫 أنت محظور مؤقتاً من تجربة الأكواد بسبب المحاولات الخاطئة. المتبقي: {diff} ثانية.")
+                    conn.close()
+                    return
+            except Exception: pass
 
-        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND is_active = 1", (text,)).fetchone()
+        code_clean = text.strip()
+        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_clean,)).fetchone()
+        
         if not code_obj or code_obj['used_count'] >= code_obj['max_uses']:
             attempts = context.user_data.get('code_attempts', 0) + 1
             context.user_data['code_attempts'] = attempts
             if attempts >= 3:
-                cursor.execute("UPDATE users SET code_restricted_until = datetime('now', '+10 minutes') WHERE telegram_id = ?", (user_id,))
+                cursor.execute("UPDATE users SET code_restricted_until = strftime('%Y-%m-%d %H:%M:%S', 'now', '+10 minutes') WHERE telegram_id = ?", (user_id,))
                 conn.commit()
+                context.user_data['code_attempts'] = 0
                 await update.message.reply_text("🚫 أدخلت كوداً خاطئاً 3 مرات! تم تقييدك من إدخال الأكواد لمدة 10 دقائق.")
             else:
                 await update.message.reply_text(f"❌ كود غير صحيح أو منتهي الفعالية! (المحاولة {attempts}/3)")
             conn.close()
             return
 
-        used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND code = ?", (user_id, text)).fetchone()
+        used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
         if used:
             await update.message.reply_text("❌ لقد استخدمت هذا الكود سابقاً!")
             conn.close()
             return
 
         amt = float(code_obj['amount'])
-        
-        cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, text))
-        cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (text,))
+        actual_code = code_obj['code']
+        new_used_count = code_obj['used_count'] + 1
+        is_active = 0 if new_used_count >= code_obj['max_uses'] else 1
+
+        cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, actual_code))
+        cursor.execute("UPDATE gift_codes SET used_count = ?, is_active = ? WHERE code = ?", (new_used_count, is_active, actual_code))
         cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amt, user_id))
         conn.commit()
         conn.close()
         context.user_data.clear()
 
-        await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nإضافة <b>+{amt:.2f} NSP</b> إلى رصيدك.", parse_mode="HTML")
+        await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nإضافة <b>+{amt:.2f} NSP</b> إلى رصيد بوتك.", parse_mode="HTML")
         
         await send_all_admins(
             context,
             f"🎁 <b>استخدام كود هدية:</b>\n"
             f"• العميل: <code>{user_id}</code>\n"
-            f"• الكود: <code>{text}</code>\n"
+            f"• الكود: <code>{actual_code}</code>\n"
             f"• القيمة: <b>{amt:.2f} NSP</b>"
         )
         await show_main_menu(update, context)
@@ -1629,12 +1637,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 amt = float(text)
                 t_user = context.user_data.get('target_adm_user')
+                if amt > 0:
+                    cashier_bal = get_cashier_balance()
+                    if cashier_bal < amt:
+                        await update.message.reply_text(f"⚠️ <b>تحذير:</b> رصيد الكاشيرة الحالي ({cashier_bal:.2f} NSP) أقل من المبلغ المطلوب إضافته ({amt:.2f} NSP)!", parse_mode="HTML")
+                        conn.close()
+                        return
                 before_cashier, after_cashier = update_cashier(-amt)
                 cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amt, t_user))
                 conn.commit()
                 
                 await update.message.reply_text(
-                    f"✅ تم تعديل رصيد العميل <code>{t_user}</code> بمقدار {amt:.2f} NSP بنجاح.\n"
+                    f"✅ تم تعديل رصيد العميل <code>{t_user}</code> بمقدار {amt:+.2f} NSP بنجاح.\n"
                     f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
                     f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
                     parse_mode="HTML"
@@ -1693,6 +1707,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'ADM_GIFT_AMT':
             try:
                 amt = float(text)
+                if amt <= 0: raise ValueError
                 context.user_data['gift_amt'] = amt
                 context.user_data['state'] = 'ADM_GIFT_COUNT'
                 await update.message.reply_text("✍️ <b>خطوة 2/3:</b> أدخل عدد الأكواد المراد توليدها:")
@@ -1704,6 +1719,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'ADM_GIFT_COUNT':
             try:
                 count = int(text)
+                if count <= 0: raise ValueError
                 context.user_data['gift_count'] = count
                 context.user_data['state'] = 'ADM_GIFT_USES'
                 await update.message.reply_text("✍️ <b>خطوة 3/3:</b> أدخل عدد مرات الاستخدام المسموحة لكل كود:")
@@ -1715,10 +1731,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'ADM_GIFT_USES':
             try:
                 uses = int(text)
+                if uses <= 0: raise ValueError
                 amt = context.user_data.get('gift_amt')
                 count = context.user_data.get('gift_count')
                 
                 total_value = amt * count * uses
+                cashier_bal = get_cashier_balance()
+                
+                if cashier_bal < total_value:
+                    await update.message.reply_text(
+                        f"❌ <b>رصيد الكاشيرة غير كافٍ لتوليد هذه الأكواد!</b>\n\n"
+                        f"• القيمة الكلية المطلوبة: <b>{total_value:.2f} NSP</b>\n"
+                        f"• المتاح بالكاشيرة: <code>{cashier_bal:.2f} NSP</code>",
+                        parse_mode="HTML"
+                    )
+                    conn.close()
+                    context.user_data.clear()
+                    return
+
                 before_cashier, after_cashier = update_cashier(-total_value)
 
                 generated = []
@@ -1744,16 +1774,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'ADM_WAIT_DISABLE_CODE':
-            code_row = cursor.execute("SELECT * FROM gift_codes WHERE code = ? AND is_active = 1", (text,)).fetchone()
+            code_clean = text.strip()
+            code_row = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_clean,)).fetchone()
             if code_row:
                 unused_uses = code_row['max_uses'] - code_row['used_count']
                 refund = unused_uses * float(code_row['amount'])
-                cursor.execute("UPDATE gift_codes SET is_active = 0 WHERE code = ?", (text,))
+                cursor.execute("UPDATE gift_codes SET is_active = 0 WHERE code = ?", (code_row['code'],))
                 conn.commit()
                 
                 before_cashier, after_cashier = update_cashier(refund)
                 await update.message.reply_text(
-                    f"✅ تم تعطيل الكود <code>{text}</code> بنجاح.\n"
+                    f"✅ تم تعطيل الكود <code>{code_row['code']}</code> بنجاح.\n"
                     f"💰 تم إرجاع المتبقي (<b>{refund:.2f} NSP</b>) للكاشيرة.\n"
                     f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
                     f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>",
