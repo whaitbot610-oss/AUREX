@@ -246,7 +246,7 @@ def set_setting(cursor, key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 def get_authenticated_user_id():
-    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو الرابط (Referer) أو بيانات التلجرام المشفّرة (initData) لضمان القراءة الصحيحة للفات"""
+    """استخراج المعرّف تلقائياً من الجلسة أو الطلب أو الرابط (Referer) أو بيانات التلجرام المشفّرة (initData)"""
     user_id = session.get('user_id')
     data = get_req_data()
     
@@ -258,7 +258,6 @@ def get_authenticated_user_id():
         request.args.get('user_id')
     )
 
-    # استخراج معرّف التلغرام من رابط الصفحة الأصلية (Referer) إذا قمت بفتح العجلة برابط يحتوي على telegram_id
     if not raw_tg and request.referrer:
         try:
             parsed_ref = urllib.parse.urlparse(request.referrer)
@@ -277,7 +276,6 @@ def get_authenticated_user_id():
         except Exception:
             pass
     
-    # تفكيك وفك تشفير معرّف المستخدم من initData الخاص بـ Telegram WebApp
     if not raw_tg:
         init_data = (
             request.headers.get('X-Telegram-Init-Data') or 
@@ -299,7 +297,6 @@ def get_authenticated_user_id():
 
     if raw_tg:
         raw_str = str(raw_tg).strip()
-        # البحث بالنص، وبالرقم، وباسم المستخدم لمنع التكرار والحصول على الحساب الصحيح
         user = cursor.execute("""
             SELECT telegram_id FROM users 
             WHERE telegram_id = ? 
@@ -314,7 +311,6 @@ def get_authenticated_user_id():
             session['user_id'] = found_id
             return found_id
 
-        # إنشاء الحساب فقط إذا كان المعرّف رقمياً ولم يوجد مسبقاً في القاعدة
         if raw_str.isdigit():
             tg_id = int(raw_str)
             cursor.execute("""
@@ -430,13 +426,13 @@ def get_user_account():
     res['bot_balance'] = res['bot_balance'] if res['bot_balance'] is not None else 0.0
     return jsonify(res)
 
-# مسارات متوافقة مع واجهة العجلة للحصول على اللفات المتاحة والرصيد بدون أخطاء
+# مسارات متوافقة مع واجهة العجلة للحصول على اللفات المتاحة ورصيد البوت
 @app.route('/api/get-spins', methods=['GET', 'POST'])
 @app.route('/api/wheel/status', methods=['GET', 'POST'])
 def get_spins_status():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر تحديد آيدي المستخدم', 'free_spins': 0, 'spins': 0}), 400
+        return jsonify({'error': 'تعذر تحديد آيدي المستخدم', 'free_spins': 0, 'spins': 0, 'bot_balance': 0.0}), 200
 
     conn = get_db_connection()
     user = conn.execute("""
@@ -447,7 +443,7 @@ def get_spins_status():
     conn.close()
 
     if not user:
-        return jsonify({'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 404
+        return jsonify({'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 200
 
     spins_count = user['free_spins'] if user['free_spins'] is not None else 0
     return jsonify({
@@ -716,12 +712,12 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. عجلة الحظ (تعمل بالكامل عبر ID مع الخصم والإضافة للكاشيرة ورصيد البوت مباشرة)
+# 2. عجلة الحظ (تعتمد حصرياً على لفات ورصيد البوت، وتضيف الأرباح للبوت وتخصم من الكاشيرة وتُرسل إشعاراً)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
     if not user_id:
-        return jsonify({'error': 'تعذر تحديد معرّف المستخدم'}), 400
+        return jsonify({'error': 'تعذر تحديد معرّف المستخدم، يرجى فتح العجلة من البوت مباشرة'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -737,24 +733,23 @@ def wheel_spin():
 
     current_free_spins = user['free_spins'] if user['free_spins'] is not None else 0
     current_bot_balance = user['bot_balance'] if user['bot_balance'] is not None else 0.0
-    current_site_balance = user['site_balance'] if user['site_balance'] is not None else 0.0
 
     is_free_spin = False
+    spin_cost = 10.0
+
+    # 1. الخصم والاعتماد حصرياً على لفات البوت ثم رصيد البوت فقط (تم فصل رصيد الموقع تماماً)
     if current_free_spins > 0:
         is_free_spin = True
         cursor.execute("UPDATE users SET free_spins = MAX(0, free_spins - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
     else:
-        spin_cost = 10.0
         if current_bot_balance >= spin_cost:
-            cursor.execute("UPDATE users SET bot_balance = MAX(0, bot_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
-            update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
-        elif current_site_balance >= spin_cost:
-            cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
+            cursor.execute("UPDATE users SET bot_balance = MAX(0.0, bot_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
             update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
         else:
             conn.close()
-            return jsonify({'error': 'ليس لديك لفتات مجانية أو رصيد كافٍ لتدوير العجلة'}), 400
+            return jsonify({'error': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة'}), 400
 
+    # 2. حساب احتمالات الفوز
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
         probs = json.loads(probs_str)
@@ -769,15 +764,24 @@ def wheel_spin():
     bot_id = user['bot_id'] or 1
     cashier = get_bot_cashier(cursor, bot_id)
 
+    # إلغاء الجائزة إذا كانت كاشيرة البوت لا تكفي
     if chosen_reward > cashier:
         chosen_reward = 0
 
-    msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} نقطة"
+    msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} تم إضافتها لرصيد البوت"
 
+    # 3. إضافة الجائزة لرصيد البوت المباشر والخصم من كاشيرة البوت وإرسال إشعار
     if chosen_reward > 0:
-        # خصم المبلغ المربوح من كاشيرة البوت وإضافته لرصيد البوت الخاص بالعميل مباشرة
         cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
         update_bot_cashier(cursor, -chosen_reward, bot_id)
+
+        # إرسال إشعار فوري لتلغرام الأدمن
+        user_name_str = user['site_username'] or user['username'] or str(user_id)
+        notify_msg = (f"🎡 <b>فوز جديد في عجلة البوت!</b>\n"
+                      f"👤 المستخدم: {user_name_str} (ID: <code>{user_id}</code>)\n"
+                      f"🎁 الجائزة: <b>{chosen_reward}</b> نقطة/رصيد\n"
+                      f"🎰 نوع اللفة: {'مجانية' if is_free_spin else 'مدفوعة من رصيد البوت'}")
+        send_telegram_admin_notify(notify_msg)
 
     conn.commit()
     updated_user = cursor.execute("SELECT bot_balance, site_balance, free_spins FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
@@ -843,7 +847,6 @@ def create_code():
         conn.close()
         return jsonify({'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
 
-# إصلاح واستخدام الكود للعميل والتفعيل المباشر
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
     data = get_req_data()
@@ -863,7 +866,6 @@ def use_code():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # إنشاء حساب تلقائي للمستخدم إذا كان يستخدم الكود لأول مرة
     user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
     if not user:
         cursor.execute("""
@@ -873,7 +875,6 @@ def use_code():
         conn.commit()
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
 
-    # البحث عن الكود بشكل غير حساس لحالة الأحرف (Case-Insensitive)
     code_obj = cursor.execute("SELECT * FROM gift_codes WHERE LOWER(code) = LOWER(?) AND active = 1", (code_text,)).fetchone()
     if not code_obj or code_obj['used_count'] >= code_obj['max_uses']:
         conn.close()
@@ -888,7 +889,6 @@ def use_code():
     cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
     cursor.execute("UPDATE gift_codes SET used_count = used_count + 1 WHERE code = ?", (real_code,))
     
-    # إضافة القيمة لرصيد البوت ورصيد الموقع معاً لتمكين الاستخدام الفوري
     cursor.execute("UPDATE users SET bot_balance = bot_balance + ?, site_balance = site_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
                    (code_obj['amount'], code_obj['amount'], telegram_id, str(telegram_id)))
     
