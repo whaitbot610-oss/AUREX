@@ -8,6 +8,7 @@ import subprocess
 import json
 import urllib.request
 import urllib.parse
+import traceback
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
@@ -42,7 +43,7 @@ def send_telegram_admin_notify(message):
             req = urllib.request.Request(url, data=payload)
             urllib.request.urlopen(req, timeout=5)
         except Exception as e:
-            print(f"Failed to send admin notification: {e}")
+            print(f"Failed to send admin notification: {e}", flush=True)
 
     threading.Thread(target=_send, daemon=True).start()
 
@@ -59,6 +60,8 @@ def add_cors_headers(response):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    print(f"!!! SERVER ERROR OCCURRED: {str(e)} !!!", flush=True)
+    traceback.print_exc()
     return jsonify({'error': f'حدث خطأ غير متوقع في السيرفر: {str(e)}'}), 500
 
 def get_db_connection():
@@ -229,7 +232,7 @@ def get_req_data():
 def get_bot_cashier(cursor, bot_id=1):
     cursor.execute("SELECT cashier_balance FROM bots WHERE id = ?", (bot_id,))
     row = cursor.fetchone()
-    return float(row['cashier_balance']) if row else 0.0
+    return float(row['cashier_balance']) if row and row['cashier_balance'] is not None else 0.0
 
 def update_bot_cashier(cursor, amount_change, bot_id=1):
     old_balance = get_bot_cashier(cursor, bot_id)
@@ -497,7 +500,7 @@ def register_site():
                     ref_id = int(referred_by)
                     cursor.execute('''
                         UPDATE users 
-                        SET referrals_count = referrals_count + 1, free_spins = free_spins + 1 
+                        SET referrals_count = COALESCE(referrals_count, 0) + 1, free_spins = COALESCE(free_spins, 0) + 1 
                         WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?
                     ''', (ref_id, str(ref_id)))
                 except (ValueError, TypeError):
@@ -561,7 +564,7 @@ def claim_welcome_bonus():
         return jsonify({'error': 'رصيد الكاشيرة غير كافٍ لصرف البونص الترحيبي حالياً'}), 400
 
     update_bot_cashier(cursor, -bonus_amount, bot_id)
-    cursor.execute("UPDATE users SET site_balance = site_balance + ?, got_welcome_bonus = 1 WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (bonus_amount, telegram_id, str(telegram_id)))
+    cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ?, got_welcome_bonus = 1 WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (bonus_amount, telegram_id, str(telegram_id)))
 
     conn.commit()
     updated_user = cursor.execute("SELECT site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
@@ -710,7 +713,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# عجلة الحظ (منفصلة تماماً ومربوطة بالبوت: تستخدم رصيد/لفات البوت والجوائز تُضاف لرصيد البوت وتُخصم من الكاشيرة)
+# عجلة الحظ
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -723,24 +726,24 @@ def wheel_spin():
 
     if not user:
         cursor.execute("""
-            INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
+            INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
             VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
         """, (user_id, f"user_{user_id}", f"user_{user_id}", f"pass_{user_id}"))
         conn.commit()
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
 
-    current_free_spins = user['free_spins'] if user['free_spins'] is not None else 0
-    current_bot_balance = user['bot_balance'] if user['bot_balance'] is not None else 0.0
+    current_free_spins = user['free_spins'] if user and user['free_spins'] is not None else 0
+    current_bot_balance = user['bot_balance'] if user and user['bot_balance'] is not None else 0.0
 
     is_free_spin = False
     spin_cost = 10.0
 
     if current_free_spins > 0:
         is_free_spin = True
-        cursor.execute("UPDATE users SET free_spins = MAX(0, free_spins - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
+        cursor.execute("UPDATE users SET free_spins = MAX(0, COALESCE(free_spins, 0) - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
     else:
         if current_bot_balance >= spin_cost:
-            cursor.execute("UPDATE users SET bot_balance = MAX(0.0, bot_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
+            cursor.execute("UPDATE users SET bot_balance = MAX(0.0, COALESCE(bot_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
             update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
         else:
             conn.close()
@@ -766,7 +769,7 @@ def wheel_spin():
     msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} تم إضافتها لرصيد البوت"
 
     if chosen_reward > 0:
-        cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
+        cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
         update_bot_cashier(cursor, -chosen_reward, bot_id)
 
         user_name_str = user['site_username'] or user['username'] or str(user_id)
@@ -785,9 +788,9 @@ def wheel_spin():
         'reward': chosen_reward,
         'message': msg,
         'is_free_spin': is_free_spin,
-        'new_bot_balance': updated_user['bot_balance'] if updated_user['bot_balance'] is not None else 0.0,
-        'new_site_balance': updated_user['site_balance'] if updated_user['site_balance'] is not None else 0.0,
-        'free_spins_left': updated_user['free_spins'] if updated_user['free_spins'] is not None else 0
+        'new_bot_balance': updated_user['bot_balance'] if updated_user and updated_user['bot_balance'] is not None else 0.0,
+        'new_site_balance': updated_user['site_balance'] if updated_user and updated_user['site_balance'] is not None else 0.0,
+        'free_spins_left': updated_user['free_spins'] if updated_user and updated_user['free_spins'] is not None else 0
     })
 
 # ==================== الأكواد وإشعارات التلغرام ====================
@@ -859,60 +862,78 @@ def use_code():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
-    if not user:
-        cursor.execute("""
-            INSERT INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
-            VALUES (?, ?, ?, ?, 0.0, 0.0)
-        """, (telegram_id, f"user_{telegram_id}", f"user_{telegram_id}", f"pass_{telegram_id}"))
-        conn.commit()
+    try:
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
+        if not user:
+            cursor.execute("""
+                INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance)
+                VALUES (?, ?, ?, ?, 0.0, 0.0)
+            """, (telegram_id, f"user_{telegram_id}", f"user_{telegram_id}", f"pass_{telegram_id}"))
+            conn.commit()
+            user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
 
-    code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ? AND active = 1", (code_text,)).fetchone()
-    if not code_obj or code_obj['used_count'] >= code_obj['max_uses']:
+        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ? AND active = 1", (code_text,)).fetchone()
+        
+        if not code_obj:
+            conn.close()
+            return jsonify({'error': 'الكود غير صالح أو غير موجود أو ملغى'}), 400
+
+        used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
+        max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
+        amount = float(code_obj['amount']) if code_obj['amount'] is not None else 0.0
+
+        if used_count >= max_uses:
+            conn.close()
+            return jsonify({'error': 'تم استخدام هذا الكود بالكامل للعدد المسموح به'}), 400
+
+        used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
+        if used:
+            conn.close()
+            return jsonify({'error': 'لقد استخدمت هذا الكود سابقاً'}), 400
+
+        real_code = code_obj['code']
+        new_used_count = used_count + 1
+        is_active = 0 if new_used_count >= max_uses else 1
+
+        cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
+        cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, is_active, real_code))
+        
+        cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
+                       (amount, telegram_id, str(telegram_id)))
+        
+        conn.commit()
+        
+        user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance, site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
         conn.close()
-        return jsonify({'error': 'الكود غير صالح أو ملغى أو تم استخدامه بالكامل'}), 400
 
-    used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
-    if used:
+        user_name_str = (user_info['site_username'] if user_info and user_info['site_username'] else None) or (user_info['username'] if user_info and user_info['username'] else None) or str(telegram_id)
+        bot_bal = float(user_info['bot_balance'] if user_info and user_info['bot_balance'] is not None else 0.0)
+        site_bal = float(user_info['site_balance'] if user_info and user_info['site_balance'] is not None else 0.0)
+
+        notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
+                       f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
+                       f"🔑 الكود: <code>{real_code}</code>\n"
+                       f"💰 القيمة: {amount}$ (تمت إضافتها لرصيد البوت)")
+        send_telegram_admin_notify(notify_text)
+
+        return jsonify({
+            'status': 'success',
+            'message': f'تم تفعيل الكود بنجاح وإضافة {amount} إلى رصيد البوت الخاص بك',
+            'user': {
+                'telegram_id': telegram_id,
+                'username': user_name_str,
+                'new_bot_balance': bot_bal,
+                'new_site_balance': site_bal
+            },
+            'code': real_code,
+            'amount': amount
+        })
+    except Exception as e:
+        conn.rollback()
         conn.close()
-        return jsonify({'error': 'لقد استخدمت هذا الكود سابقاً'}), 400
-
-    real_code = code_obj['code']
-    new_used_count = code_obj['used_count'] + 1
-    is_active = 0 if new_used_count >= code_obj['max_uses'] else 1
-
-    cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
-    cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, is_active, real_code))
-    
-    # يُضاف رصيد الكود لرصيد البوت حصرياً بناءً على خصمه السابق من كاشيرة البوت
-    cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
-                   (code_obj['amount'], telegram_id, str(telegram_id)))
-    
-    conn.commit()
-    
-    user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance, site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
-    conn.close()
-
-    user_name_str = user_info['site_username'] or user_info['username'] or str(telegram_id)
-    notify_text = (f"🎟️ <b>إشعار استخدام كود رصيد:</b>\n"
-                   f"👤 المستخدم: {user_name_str} (ID: <code>{telegram_id}</code>)\n"
-                   f"🔑 الكود: <code>{real_code}</code>\n"
-                   f"💰 القيمة: {code_obj['amount']}$ (تمت إضافتها لرصيد البوت)")
-    send_telegram_admin_notify(notify_text)
-
-    return jsonify({
-        'status': 'success',
-        'message': f'تم تفعيل الكود بنجاح وإضافة {code_obj["amount"]} إلى رصيد البوت الخاص بك',
-        'user': {
-            'telegram_id': user_info['telegram_id'],
-            'username': user_name_str,
-            'new_bot_balance': user_info['bot_balance'],
-            'new_site_balance': user_info['site_balance']
-        },
-        'code': real_code,
-        'amount': code_obj['amount']
-    })
+        print(f"Error handling code use: {e}", flush=True)
+        traceback.print_exc()
+        return jsonify({'error': f'حدث خطأ أثناء معالجة الكود: {str(e)}'}), 500
 
 # --- مسارات إدارة الأكواد من لوحة الأدمن ---
 
@@ -930,7 +951,6 @@ def admin_list_codes():
 @app.route('/api/code/deactivate', methods=['POST'])
 @app.route('/api/admin/code/deactivate', methods=['POST'])
 def admin_deactivate_code():
-    """إلغاء تفعيل الكود وإعادة المبالغ غير المستخدمة منه تلقائياً إلى الكاشيرة"""
     data = get_req_data()
     code_text = str(data.get('code', '')).strip().upper()
 
@@ -949,8 +969,12 @@ def admin_deactivate_code():
         conn.close()
         return jsonify({'error': 'الكود ملغى بالفعل'}), 400
 
-    remaining_uses = max(0, code_obj['max_uses'] - code_obj['used_count'])
-    refund_amount = remaining_uses * code_obj['amount']
+    max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
+    used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
+    amount = float(code_obj['amount']) if code_obj['amount'] is not None else 0.0
+
+    remaining_uses = max(0, max_uses - used_count)
+    refund_amount = remaining_uses * amount
     bot_id = code_obj['bot_id'] or 1
 
     cursor.execute("UPDATE gift_codes SET active = 0 WHERE UPPER(code) = ?", (code_text,))
@@ -1005,10 +1029,10 @@ def admin_update_user_balance():
     col = "site_balance" if balance_type == 'site' else "bot_balance"
 
     if action == 'add':
-        cursor.execute(f"UPDATE users SET {col} = {col} + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
+        cursor.execute(f"UPDATE users SET {col} = COALESCE({col}, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
         update_bot_cashier(cursor, -amount, bot_id)
     else:
-        cursor.execute(f"UPDATE users SET {col} = MAX(0, {col} - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
+        cursor.execute(f"UPDATE users SET {col} = MAX(0, COALESCE({col}, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (amount, telegram_id, str(telegram_id)))
         update_bot_cashier(cursor, +amount, bot_id)
 
     conn.commit()
@@ -1179,12 +1203,10 @@ def process_transaction():
 
     if action == 'approve':
         if tx['type'] == 'deposit':
-            # الإيداع يضيف رصيداً للمستخدم ويضيف الأموال المودعة لكاشيرة البوت
-            cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
+            cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
             update_bot_cashier(cursor, +tx['amount'], bot_id)
         elif tx['type'] == 'withdraw':
-            # السحب يخصم رصيد المستخدم ويخصم المبلغ من الكاشيرة
-            cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
+            cursor.execute("UPDATE users SET site_balance = MAX(0, COALESCE(site_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
             update_bot_cashier(cursor, -tx['amount'], bot_id)
 
     cursor.execute("UPDATE transactions SET status = ? WHERE id = ?", (action, tx_id))
@@ -1198,9 +1220,9 @@ def launch_bot():
         os.environ["BOT_LAUNCHED"] = "true"
         try:
             subprocess.Popen([sys.executable, "bot.py"])
-            print(">>> تم تشغيل bot.py تلقائياً بنجاح <<<")
+            print(">>> تم تشغيل bot.py تلقائياً بنجاح <<<", flush=True)
         except Exception as e:
-            print(f"خطأ في تشغيل البوت: {e}")
+            print(f"خطأ في تشغيل البوت: {e}", flush=True)
 
 if __name__ == '__main__':
     launch_bot()
