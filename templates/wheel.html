@@ -39,7 +39,7 @@
             width: 100%;
             max-width: 320px;
             display: flex;
-            justify-content: center;
+            justify-content: space-around;
             align-items: center;
             padding: 15px;
             margin-bottom: 25px;
@@ -49,12 +49,12 @@
             text-align: center;
         }
         .stat-title {
-            font-size: 14px;
+            font-size: 13px;
             color: #aaa;
             margin-bottom: 5px;
         }
         .stat-value {
-            font-size: 26px;
+            font-size: 22px;
             font-weight: bold;
             color: #f39c12;
         }
@@ -138,6 +138,7 @@
             z-index: 100;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             text-align: center;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -149,8 +150,12 @@
 
     <div class="stats-card">
         <div class="stat-item">
-            <div class="stat-title">اللفات المجانية المتاحة</div>
+            <div class="stat-title">اللفات المجانية</div>
             <div class="stat-value" id="free-spins">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-title">رصيد البوت</div>
+            <div class="stat-value" id="bot-balance">0.0</div>
         </div>
     </div>
 
@@ -238,15 +243,16 @@
             el.innerText = msg;
             el.style.background = isError ? '#e74c3c' : '#27ae60';
             el.style.display = 'block';
-            setTimeout(() => { el.style.display = 'none'; }, 3000);
+            setTimeout(() => { el.style.display = 'none'; }, 3500);
         }
 
         let currentSpinsCount = 0;
+        let currentBotBal = 0;
 
         async function fetchAccountData() {
             try {
                 const tgId = getTelegramId();
-                let url = '/api/user/account';
+                let url = '/api/wheel/status';
                 if (tgId) {
                     url += '?telegram_id=' + tgId;
                 }
@@ -259,7 +265,10 @@
                 const data = await res.json();
                 if (res.ok) {
                     currentSpinsCount = data.free_spins !== undefined ? data.free_spins : (data.spins || 0);
+                    currentBotBal = data.bot_balance !== undefined ? data.bot_balance : 0;
+
                     document.getElementById('free-spins').innerText = currentSpinsCount;
+                    document.getElementById('bot-balance').innerText = typeof currentBotBal === 'number' ? currentBotBal.toFixed(2) : currentBotBal;
                 }
             } catch (err) {
                 console.error("Fetch error:", err);
@@ -271,11 +280,6 @@
 
         async function spinWheel() {
             if (isSpinning) return;
-
-            if (currentSpinsCount <= 0) {
-                showAlert('ليس لديك لفات مجانية متاحة لتأدية الدورة!', true);
-                return;
-            }
 
             const spinBtn = document.getElementById('spin-btn');
             spinBtn.disabled = true;
@@ -297,7 +301,7 @@
                 const data = await res.json();
 
                 if (!res.ok) {
-                    showAlert(data.error || 'ليس لديك لفات كافية', true);
+                    showAlert(data.error || 'ليس لديك لفات مجانية أو رصيد كافٍ لتدوير العجلة', true);
                     spinBtn.disabled = false;
                     return;
                 }
@@ -309,7 +313,8 @@
                 if (rewardIndex === -1) rewardIndex = 0;
 
                 const segmentAngleDeg = 360 / numSegments;
-                const targetAngleDeg = 360 - (rewardIndex * segmentAngleDeg) - (segmentAngleDeg / 2);
+                // ضبط دقيق لزاوية الوقوف تحت المؤشر العلوي (عند الزاوية 270)
+                const targetAngleDeg = (270 - (rewardIndex * segmentAngleDeg + segmentAngleDeg / 2) + 360) % 360;
                 const extraRounds = 360 * 5;
                 const finalRotation = currentRotation + extraRounds + (targetAngleDeg - (currentRotation % 360));
 
@@ -321,8 +326,14 @@
                     spinBtn.disabled = false;
                     showAlert(data.message);
                     
-                    currentSpinsCount = data.free_spins_left;
-                    document.getElementById('free-spins').innerText = currentSpinsCount;
+                    if (data.free_spins_left !== undefined) {
+                        currentSpinsCount = data.free_spins_left;
+                        document.getElementById('free-spins').innerText = currentSpinsCount;
+                    }
+                    if (data.new_bot_balance !== undefined) {
+                        currentBotBal = data.new_bot_balance;
+                        document.getElementById('bot-balance').innerText = parseFloat(currentBotBal).toFixed(2);
+                    }
                 }, 4000);
 
             } catch (err) {
