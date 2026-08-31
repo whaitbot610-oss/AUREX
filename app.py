@@ -403,7 +403,7 @@ def logout_site():
     session.clear()
     return jsonify({'status': 'success', 'message': 'تم تسجيل الخروج بنجاح'})
 
-@app.route('/api/user/account', methods=['GET'])
+@app.route('/api/user/account', methods=['GET', 'POST'])
 def get_user_account():
     user_id = get_authenticated_user_id()
     if not user_id:
@@ -429,6 +429,36 @@ def get_user_account():
     res['balance'] = res['site_balance']
     res['bot_balance'] = res['bot_balance'] if res['bot_balance'] is not None else 0.0
     return jsonify(res)
+
+# مسارات متوافقة مع واجهة العجلة للحصول على اللفات المتاحة والرصيد بدون أخطاء
+@app.route('/api/get-spins', methods=['GET', 'POST'])
+@app.route('/api/wheel/status', methods=['GET', 'POST'])
+def get_spins_status():
+    user_id = get_authenticated_user_id()
+    if not user_id:
+        return jsonify({'error': 'تعذر تحديد آيدي المستخدم', 'free_spins': 0, 'spins': 0}), 400
+
+    conn = get_db_connection()
+    user = conn.execute("""
+        SELECT telegram_id, free_spins, bot_balance, site_balance 
+        FROM users 
+        WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?
+    """, (user_id, str(user_id))).fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({'free_spins': 0, 'spins': 0, 'bot_balance': 0.0, 'site_balance': 0.0}), 404
+
+    spins_count = user['free_spins'] if user['free_spins'] is not None else 0
+    return jsonify({
+        'status': 'success',
+        'telegram_id': user['telegram_id'],
+        'free_spins': spins_count,
+        'spins': spins_count,
+        'freeSpins': spins_count,
+        'bot_balance': user['bot_balance'] or 0.0,
+        'site_balance': user['site_balance'] or 0.0
+    })
 
 @app.route('/api/register_site', methods=['POST'])
 def register_site():
@@ -686,7 +716,7 @@ def play_slot_game():
         'new_balance': new_balance
     })
 
-# 2. عجلة الحظ (تعمل بالكامل عبر ID مع التعامل الدقيق مع اللفات المجانية)
+# 2. عجلة الحظ (تعمل بالكامل عبر ID مع الخصم والإضافة للكاشيرة ورصيد البوت مباشرة)
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     user_id = get_authenticated_user_id()
@@ -706,6 +736,7 @@ def wheel_spin():
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
 
     current_free_spins = user['free_spins'] if user['free_spins'] is not None else 0
+    current_bot_balance = user['bot_balance'] if user['bot_balance'] is not None else 0.0
     current_site_balance = user['site_balance'] if user['site_balance'] is not None else 0.0
 
     is_free_spin = False
@@ -714,11 +745,15 @@ def wheel_spin():
         cursor.execute("UPDATE users SET free_spins = MAX(0, free_spins - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
     else:
         spin_cost = 10.0
-        if current_site_balance < spin_cost:
+        if current_bot_balance >= spin_cost:
+            cursor.execute("UPDATE users SET bot_balance = MAX(0, bot_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
+            update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
+        elif current_site_balance >= spin_cost:
+            cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
+            update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
+        else:
             conn.close()
             return jsonify({'error': 'ليس لديك لفتات مجانية أو رصيد كافٍ لتدوير العجلة'}), 400
-        cursor.execute("UPDATE users SET site_balance = MAX(0, site_balance - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
-        update_bot_cashier(cursor, spin_cost, user['bot_id'] or 1)
 
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
@@ -740,11 +775,12 @@ def wheel_spin():
     msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} نقطة"
 
     if chosen_reward > 0:
-        cursor.execute("UPDATE users SET site_balance = site_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
+        # خصم المبلغ المربوح من كاشيرة البوت وإضافته لرصيد البوت الخاص بالعميل مباشرة
+        cursor.execute("UPDATE users SET bot_balance = bot_balance + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
         update_bot_cashier(cursor, -chosen_reward, bot_id)
 
     conn.commit()
-    updated_user = cursor.execute("SELECT site_balance, free_spins FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
+    updated_user = cursor.execute("SELECT bot_balance, site_balance, free_spins FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
     conn.close()
 
     return jsonify({
@@ -752,6 +788,7 @@ def wheel_spin():
         'reward': chosen_reward,
         'message': msg,
         'is_free_spin': is_free_spin,
+        'new_bot_balance': updated_user['bot_balance'] if updated_user['bot_balance'] is not None else 0.0,
         'new_site_balance': updated_user['site_balance'] if updated_user['site_balance'] is not None else 0.0,
         'free_spins_left': updated_user['free_spins'] if updated_user['free_spins'] is not None else 0
     })
