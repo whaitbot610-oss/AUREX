@@ -829,7 +829,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
     code_clean = raw_code.strip()
     
     if not code_clean:
-        await update.message.reply_text("❌ يرجى إدخال كود هدية صالح.")
+        await update.message.reply_text("❌ الكود غير صحيح")
         return
 
     conn = get_db()
@@ -859,15 +859,10 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
             except Exception as e:
                 logging.error(f"Restriction check error: {e}")
 
-        code_obj = cursor.execute(
-            "SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND (is_active = 1 OR is_active IS NULL OR is_active = '1')", 
-            (code_clean,)
-        ).fetchone()
+        # البحث عن الكود في قاعدة البيانات
+        code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?)", (code_clean,)).fetchone()
 
-        used_count = int(code_obj['used_count']) if (code_obj and code_obj['used_count'] is not None) else 0
-        max_uses = int(code_obj['max_uses']) if (code_obj and code_obj['max_uses'] is not None) else 1
-        
-        if not code_obj or used_count >= max_uses:
+        if not code_obj:
             attempts = context.user_data.get('code_attempts', 0) + 1
             context.user_data['code_attempts'] = attempts
             if attempts >= 3:
@@ -878,24 +873,30 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
                 context.user_data.pop('state', None)
                 await update.message.reply_text("🚫 أدخلت كوداً خاطئاً 3 مرات! تم تقييدك من إدخال الأكواد لمدة 10 دقائق.")
             else:
-                await update.message.reply_text(f"❌ كود غير صحيح أو منتهي الفعالية! (المحاولة {attempts}/3)")
+                await update.message.reply_text("❌ الكود غير صحيح")
             conn.close()
             return
 
-        used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
-        if used:
+        used_count = int(code_obj['used_count']) if (code_obj['used_count'] is not None) else 0
+        max_uses = int(code_obj['max_uses']) if (code_obj['max_uses'] is not None) else 1
+        is_active = code_obj['is_active'] if code_obj['is_active'] is not None else 1
+
+        # التحقق مما إذا كان العميل استخدم الكود سابقاً أو انتهى عدد الاستخدامات
+        used_by_user = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
+
+        if used_by_user or used_count >= max_uses or is_active == 0:
             context.user_data.pop('state', None)
-            await update.message.reply_text("❌ لقد استخدمت هذا الكود سابقاً!")
+            await update.message.reply_text("❌ الكود مستخدم")
             conn.close()
             return
 
-        amt = float(code_obj['amount']) if (code_obj and code_obj['amount'] is not None) else 0.0
+        amt = float(code_obj['amount']) if (code_obj['amount'] is not None) else 0.0
         actual_code = code_obj['code']
         new_used_count = used_count + 1
-        is_active = 0 if new_used_count >= max_uses else 1
+        new_is_active = 0 if new_used_count >= max_uses else 1
 
         cursor.execute("INSERT OR REPLACE INTO used_codes (telegram_id, code) VALUES (?, ?)", (user_id, actual_code))
-        cursor.execute("UPDATE gift_codes SET used_count = ?, is_active = ? WHERE UPPER(code) = UPPER(?)", (new_used_count, is_active, actual_code))
+        cursor.execute("UPDATE gift_codes SET used_count = ?, is_active = ? WHERE UPPER(code) = UPPER(?)", (new_used_count, new_is_active, actual_code))
         cursor.execute("UPDATE users SET balance = COALESCE(balance, 0) + ?, bot_balance = COALESCE(bot_balance, 0) + ? WHERE telegram_id = ?", (amt, amt, user_id))
         cursor.execute("INSERT INTO transactions (telegram_id, type, method, amount, tx_number, status) VALUES (?, 'gift_code', 'كود هدية', ?, ?, 'approved')", (user_id, amt, actual_code))
         conn.commit()
@@ -903,7 +904,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         
         context.user_data.clear()
 
-        await update.message.reply_text(f"🎉 <b>تم شحن الكود بنجاح!</b>\nإضافة <b>+{amt:.2f} NSP</b> إلى رصيد بوتك.", parse_mode="HTML")
+        await update.message.reply_text(f"🎉 <b>تم تفعيل واضافة الرصيد الى محفظة البوت</b> (+{amt:.2f} NSP)", parse_mode="HTML")
         
         await send_all_admins(
             context,
@@ -925,6 +926,18 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
 # ==========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
+    # إضافة تفاعل عشوائي (برق ⚡ أو نار 🔥) على أمر /start
+    if update.message:
+        try:
+            random_emoji = random.choice(["⚡", "🔥"])
+            await context.bot.set_message_reaction(
+                chat_id=update.effective_chat.id,
+                message_id=update.message.message_id,
+                reaction=[{"type": "emoji", "emoji": random_emoji}]
+            )
+        except Exception as e:
+            logging.error(f"Error setting reaction on /start: {e}")
 
     conn = get_db()
     cursor = conn.cursor()
@@ -1448,24 +1461,25 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
 
     elif data == "adm_gen_batch" and is_admin(user_id):
+        # الترتيب الجديد: 1. المبلغ أولاً
         context.user_data['state'] = 'ADM_GIFT_AMT'
         await update.effective_chat.send_message("✍️ <b>خطوة 1/3:</b> أدخل قيمة الكود الواحد بـ NSP:", parse_mode="HTML")
 
     elif data == "adm_view_codes" and is_admin(user_id):
         conn = get_db()
-        codes = conn.execute("SELECT * FROM gift_codes WHERE is_active = 1 AND used_count < max_uses LIMIT 20").fetchall()
+        codes = conn.execute("SELECT * FROM gift_codes WHERE is_active = 1 AND used_count < max_uses LIMIT 50").fetchall()
         conn.close()
         if not codes:
             await update.effective_chat.send_message("❌ لا يوجد أكواد هدية مفعلة حالياً.")
             return
-        txt = "🎁 <b>قائمة الأكواد المفعلة:</b>\n\n"
+        txt = "🎁 <b>قائمة الأكواد النشطة:</b>\n\n"
         for c in codes:
             txt += f"• الكود: <code>{c['code']}</code> | القيمة: <code>{c['amount']} NSP</code> | الاستخدام: <code>{c['used_count']}/{c['max_uses']}</code>\n"
         await update.effective_chat.send_message(txt, parse_mode="HTML")
 
     elif data == "adm_disable_code" and is_admin(user_id):
         context.user_data['state'] = 'ADM_WAIT_DISABLE_CODE'
-        await update.effective_chat.send_message("أدخل الكود المراد إلغاء تفعيله بالضبط:")
+        await update.effective_chat.send_message("✍️ أدخل الكود المراد إلغاء تفعيله بالضبط:")
 
     elif data == "adm_edit_channels" and is_admin(user_id):
         curr = get_setting('forced_channels', '')
@@ -1998,36 +2012,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"✅ تم تحديث رقم/حساب {m_name} إلى: <code>{text}</code>", parse_mode="HTML")
                 return
 
+            # --- الترتيب الجديد لتوليد الأكواد ---
+            # 1. المبلغ أولاً
             elif state == 'ADM_GIFT_AMT':
                 try:
                     amt = float(text)
                     if amt <= 0: raise ValueError
                     context.user_data['gift_amt'] = amt
-                    context.user_data['state'] = 'ADM_GIFT_COUNT'
-                    await update.message.reply_text("✍️ <b>خطوة 2/3:</b> أدخل عدد الأكواد المراد توليدها:")
+                    context.user_data['state'] = 'ADM_GIFT_USES'
+                    await update.message.reply_text("✍️ <b>خطوة 2/3:</b> أدخل عدد الاستخدامات المسموحة لكل كود:")
                 except ValueError:
                     await update.message.reply_text("❌ أدخل رقماً صحيحاً!")
                 conn.close()
                 return
 
-            elif state == 'ADM_GIFT_COUNT':
+            # 2. عدد الاستخدامات ثانياً
+            elif state == 'ADM_GIFT_USES':
                 try:
-                    count = int(text)
-                    if count <= 0: raise ValueError
-                    context.user_data['gift_count'] = count
-                    context.user_data['state'] = 'ADM_GIFT_USES'
-                    await update.message.reply_text("✍️ <b>خطوة 3/3:</b> أدخل عدد مرات الاستخدام المسموحة لكل كود:")
+                    uses = int(text)
+                    if uses <= 0: raise ValueError
+                    context.user_data['gift_uses'] = uses
+                    context.user_data['state'] = 'ADM_GIFT_COUNT'
+                    await update.message.reply_text("✍️ <b>خطوة 3/3:</b> أدخل كم كود تريد توليده:")
                 except ValueError:
                     await update.message.reply_text("❌ أدخل عدداً صحيحاً!")
                 conn.close()
                 return
 
-            elif state == 'ADM_GIFT_USES':
+            # 3. كم كود ثالثاً + الخصم الفوري من الكاشيرة
+            elif state == 'ADM_GIFT_COUNT':
                 try:
-                    uses = int(text)
-                    if uses <= 0: raise ValueError
+                    count = int(text)
+                    if count <= 0: raise ValueError
                     amt = context.user_data.get('gift_amt')
-                    count = context.user_data.get('gift_count')
+                    uses = context.user_data.get('gift_uses')
                     
                     total_value = amt * count * uses
                     cashier_bal = get_cashier_balance()
@@ -2043,12 +2061,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         context.user_data.clear()
                         return
 
+                    # خصم المبلغ فورا من الكاشيرة
                     before_cashier, after_cashier = update_cashier(-total_value)
 
                     generated = []
                     for _ in range(count):
                         c_str = "GIFT-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-                        cursor.execute("INSERT INTO gift_codes (code, amount, max_uses) VALUES (?, ?, ?)", (c_str, amt, uses))
+                        cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, is_active) VALUES (?, ?, ?, 0, 1)", (c_str, amt, uses))
                         generated.append(c_str)
                     conn.commit()
                     
@@ -2067,6 +2086,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
                 return
 
+            # إلغاء تفعيل الكود وإعادة الرصيد للكاشيرة
             elif state == 'ADM_WAIT_DISABLE_CODE':
                 code_clean = text.strip()
                 code_row = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?) AND is_active = 1", (code_clean,)).fetchone()
@@ -2179,20 +2199,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif state == 'ADM_WAIT_PRIV_ID':
                 if text.isdigit():
                     context.user_data['priv_target'] = int(text)
-                    context.user_data['state'] = 'ADM_WAIT_PRIV_MSG_TEXT'
-                    await update.message.reply_text(f"✍️ أدخل الرسالة المراد إرسالها للعميل <code>{text}</code>:", parse_mode="HTML")
+                    context.user_data['state'] = 'ADM_WAIT_PRIV_MSG'
+                    await update.message.reply_text("✍️ أدخل الرسالة المراد إرسالها للعميل:")
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
                 conn.close()
                 return
 
-            elif state == 'ADM_WAIT_PRIV_MSG_TEXT':
-                target_id = context.user_data.get('priv_target')
+            elif state == 'ADM_WAIT_PRIV_MSG':
+                target = context.user_data.get('priv_target')
                 try:
-                    await context.bot.send_message(target_id, f"💬 <b>رسالة خاصة من الإدارة:</b>\n\n{html.escape(text)}", parse_mode="HTML")
-                    await update.message.reply_text("✅ تم إرسال الرسالة للعميل بنجاح.")
+                    await context.bot.send_message(target, f"📩 <b>رسالة خاصة من الإدارة:</b>\n\n{html.escape(text)}", parse_mode="HTML")
+                    await update.message.reply_text("✅ تم إرسال الرسالة الخاصة بنجاح.")
                 except Exception as e:
-                    await update.message.reply_text(f"❌ تعذر إرسال الرسالة للعميل: {e}")
+                    await update.message.reply_text(f"❌ تعذر إرسال الرسالة: {e}")
                 context.user_data.clear()
                 conn.close()
                 return
@@ -2201,42 +2221,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 target = context.user_data.get('support_target')
                 try:
                     await context.bot.send_message(target, f"💬 <b>رد من الدعم الفني:</b>\n\n{html.escape(text)}", parse_mode="HTML")
-                    await update.message.reply_text("✅ تم إرسال الرد بنجاح.")
+                    await update.message.reply_text("✅ تم إرسال الرد للعميل بنجاح.")
                 except Exception as e:
                     await update.message.reply_text(f"❌ تعذر إرسال الرد: {e}")
                 context.user_data.clear()
                 conn.close()
                 return
 
-        conn.close()
     except Exception as e:
-        logging.error(f"Error in handle_message: {e}")
+        logging.error(f"Error handling message: {e}")
+    finally:
         try:
             conn.close()
         except Exception:
             pass
 
 # ==========================================================
-# 7. تشغيل البوت والخادم الرئيسي (Main Execution)
+# 7. نقطة التشغيل الرئيسية (Main Function)
 # ==========================================================
 def main():
     global MAIN_LOOP, bot_app
-    
     init_db()
 
-    health_thread = threading.Thread(target=start_health_check_server, daemon=True)
-    health_thread.start()
+    # تشغيل خادم صحة الخدمة والـ WebApp في خيط منفصل
+    t = threading.Thread(target=start_health_check_server, daemon=True)
+    t.start()
 
     application = Application.builder().token(BOT_TOKEN).build()
     bot_app = application
 
+    # تسجيل المعالجات
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_router))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
-    MAIN_LOOP = asyncio.get_event_loop()
-    
-    logging.info("Starting Aurex Telegram Bot Application...")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    MAIN_LOOP = loop
+
+    logging.info("Starting Aurex Bot...")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
