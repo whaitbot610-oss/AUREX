@@ -461,7 +461,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 
                 conn = get_db()
                 cursor = conn.cursor()
-                u = cursor.execute("SELECT spins_count, free_spins, balance, bot_balance FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+                u = cursor.execute("SELECT spins_count, free_spins, balance, bot_balance, username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
                 
                 current_spins = u['free_spins'] if (u and u['free_spins'] is not None) else (u['spins_count'] if u else 0)
                 current_bal = u['bot_balance'] if (u and u['bot_balance'] is not None) else (u['balance'] if u else 0.0)
@@ -573,6 +573,11 @@ async def send_all_admins(context: ContextTypes.DEFAULT_TYPE, text: str, reply_m
 async def send_spin_notifications(user_id, prize, before_cashier, after_cashier):
     if bot_app:
         try:
+            conn = get_db()
+            u = conn.execute("SELECT username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+            conn.close()
+            user_name = html.escape(u['username'] if (u and u['username']) else "غير معروف")
+
             await bot_app.bot.send_message(
                 user_id, 
                 f"🎡 <b>إشعار عجلة الحظ!</b>\n\n🎉 مبروك! فزت بـ <b>{prize:.2f} NSP</b> وتم إضافتها لرصيد بوتك مباشرة.", 
@@ -580,15 +585,14 @@ async def send_spin_notifications(user_id, prize, before_cashier, after_cashier)
             )
             
             conn = get_db()
-            u_row = conn.execute("SELECT username FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-            u_name = html.escape(u_row['username']) if (u_row and u_row['username']) else "غير معروف"
             admins = conn.execute("SELECT telegram_id FROM users WHERE is_admin = 1").fetchall()
             conn.close()
             admin_ids = set([a['telegram_id'] for a in admins] + [MAIN_ADMIN_ID])
             
             msg_adm = (
                 f"🎰 <b>خصم كاشيرة (فوز بعجلة الحظ):</b>\n"
-                f"• العميل: <b>{u_name}</b> | ID: <code>{user_id}</code>\n"
+                f"• العميل: <b>{user_name}</b>\n"
+                f"• الآيدي: <code>{user_id}</code>\n"
                 f"• الجائزة: <b>{prize:.2f} NSP</b>\n"
                 f"🏦 الكاشيرة قبل: <code>{before_cashier:.2f} NSP</code>\n"
                 f"🏦 الكاشيرة بعد: <code>{after_cashier:.2f} NSP</code>"
@@ -742,7 +746,7 @@ def init_db():
         ('min_deposit', '50'),
         ('min_withdraw', '100'),
         ('cashier_balance', '10000.0'),
-        ('forced_channels', ''),
+        ('forced_channels', '[]'),
         ('game_win_rate', '30'),
         ('wheel_weights', '{"0": 50, "5": 20, "10": 12, "15": 8, "25": 5, "50": 3, "100": 1.5, "500": 0.4, "10000": 0.1}')
     ]
@@ -809,56 +813,46 @@ def validate_password(password):
             bool(re.search(r'[a-zA-Z]', password)) and 
             bool(re.search(r'\d', password)))
 
-async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-    channels_str = get_setting('forced_channels', '')
-    if not channels_str: 
-        return True, []
-    
-    channels = [c.strip() for c in channels_str.split(',') if c.strip()]
-    unsub_channels = []
-    
-    for ch in channels:
-        try:
-            member = await context.bot.get_chat_member(chat_id=ch, user_id=user_id)
-            if member.status not in ['member', 'administrator', 'creator']:
-                ch_name = ch
-                ch_url = f"https://t.me/{ch.replace('@','')}"
-                try:
-                    chat = await context.bot.get_chat(ch)
-                    if chat.title:
-                        ch_name = chat.title
-                    if chat.username:
-                        ch_url = f"https://t.me/{chat.username}"
-                    elif chat.invite_link:
-                        ch_url = chat.invite_link
-                except Exception:
-                    pass
-                unsub_channels.append({'name': ch_name, 'url': ch_url, 'handle': ch})
-        except Exception as e:
-            logging.error(f"Error checking sub for {ch}: {e}")
-            ch_name = ch
-            ch_url = f"https://t.me/{ch.replace('@','')}"
-            try:
-                chat = await context.bot.get_chat(ch)
-                if chat.title:
-                    ch_name = chat.title
-                if chat.username:
-                    ch_url = f"https://t.me/{chat.username}"
-                elif chat.invite_link:
-                    ch_url = chat.invite_link
-            except Exception:
-                pass
-            unsub_channels.append({'name': ch_name, 'url': ch_url, 'handle': ch})
+def get_forced_channels_list():
+    raw = get_setting('forced_channels', '[]')
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        if raw and not raw.startswith('['):
+            channels = [c.strip() for c in raw.split(',') if c.strip()]
+            return [{"name": f"قناة {c}", "username": c, "link": f"https://t.me/{c.replace('@','')}"} for c in channels]
+    return []
 
-    is_all_subbed = (len(unsub_channels) == 0)
-    return is_all_subbed, unsub_channels
+async def check_forced_sub(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    channels = get_forced_channels_list()
+    if not channels: 
+        return True
+        
+    for ch in channels:
+        ch_username = ch.get('username', '').strip()
+        if not ch_username:
+            continue
+        if not ch_username.startswith('@') and not ch_username.startswith('-') and not ch_username.isdigit():
+            ch_username = '@' + ch_username
+            
+        try:
+            member = await context.bot.get_chat_member(chat_id=ch_username, user_id=user_id)
+            if member.status not in ['creator', 'administrator', 'member']: 
+                return False
+        except Exception as e: 
+            logging.error(f"Check forced sub error for {ch_username}: {e}")
+            return False
+    return True
 
 # ==========================================================
 # 3. دالة معالجة كود الهدية المُصلحة والمحدثة بالكامل
 # ==========================================================
 async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_code: str):
-    user_id = update.effective_user.id
-    user_name = html.escape(update.effective_user.full_name or update.effective_user.username or "غير معروف")
+    user = update.effective_user
+    user_id = user.id
+    user_name = html.escape(user.full_name or user.username or "مستخدم")
     code_clean = raw_code.strip()
     
     if not code_clean:
@@ -869,7 +863,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
     cursor = conn.cursor()
 
     try:
-        cursor.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (?, ?)", (user_id, update.effective_user.username or update.effective_user.first_name))
+        cursor.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (?, ?)", (user_id, user.username or user.first_name))
         conn.commit()
 
         now = datetime.now()
@@ -892,6 +886,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
             except Exception as e:
                 logging.error(f"Restriction check error: {e}")
 
+        # البحث عن الكود في قاعدة البيانات
         code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = UPPER(?)", (code_clean,)).fetchone()
 
         if not code_obj:
@@ -913,6 +908,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         max_uses = int(code_obj['max_uses']) if (code_obj['max_uses'] is not None) else 1
         is_active = code_obj['is_active'] if code_obj['is_active'] is not None else 1
 
+        # التحقق مما إذا كان العميل استخدم الكود سابقاً أو انتهى عدد الاستخدامات
         used_by_user = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = UPPER(?)", (user_id, code_clean)).fetchone()
 
         if used_by_user or used_count >= max_uses or is_active == 0:
@@ -940,7 +936,8 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         await send_all_admins(
             context,
             f"🎁 <b>استخدام كود هدية:</b>\n"
-            f"• العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>\n"
+            f"• العميل: <b>{user_name}</b>\n"
+            f"• الآيدي: <code>{user_id}</code>\n"
             f"• الكود: <code>{actual_code}</code>\n"
             f"• القيمة: <b>{amt:.2f} NSP</b>"
         )
@@ -958,6 +955,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE, r
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
+    # إضافة تفاعل عشوائي (برق ⚡ أو نار 🔥) على أمر /start
     if update.message:
         try:
             random_emoji = random.choice(["⚡", "🔥"])
@@ -984,11 +982,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🛠 البوت والموقع حالياً في حالة صيانة وتحديث، يرجى المحاولة لاحقاً.")
         return
 
-    is_subbed, unsub_list = await check_forced_sub(user.id, context)
-    if not is_subbed:
+    if not await check_forced_sub(user.id, context):
+        channels = get_forced_channels_list()
         btns = []
-        for item in unsub_list:
-            btns.append([InlineKeyboardButton(f"📢 اشترك في: {item['name']}", url=item['url'])])
+        for ch in channels:
+            ch_name = ch.get('name', 'قناة الاشتراك')
+            ch_link = ch.get('link', '#')
+            btns.append([InlineKeyboardButton(f"📢 {ch_name}", url=ch_link)])
         btns.append([InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")])
         conn.close()
         await update.message.reply_text("🚨 <b>يجب عليك الاشتراك بجميع القنوات التالية أولاً لاستخدام البوت:</b>", reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
@@ -1010,9 +1010,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if user.id != MAIN_ADMIN_ID:
             ref_txt = f"<code>{ref_by}</code>" if ref_by else "بدون إحالة"
+            user_name = html.escape(user.full_name or user.username or "مستخدم")
             await send_all_admins(
                 context, 
-                f"👤 <b>عضو جديد انضم للبوت!</b>\n\n• الاسم: {html.escape(user.full_name or '')}\n• المعرف: @{user.username or 'لا يوجد'}\n• الآيدي: <code>{user.id}</code>\n• الإحالة بواسطة: {ref_txt}"
+                f"👤 <b>عضو جديد انضم للبوت!</b>\n\n• الاسم: <b>{user_name}</b>\n• المعرف: @{user.username or 'لا يوجد'}\n• الآيدي: <code>{user.id}</code>\n• الإحالة بواسطة: {ref_txt}"
             )
 
         if ref_by:
@@ -1109,8 +1110,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    user_id = query.from_user.id
-    user_name = html.escape(query.from_user.full_name or query.from_user.username or "غير معروف")
+    user = query.from_user
+    user_id = user.id
+    user_name = html.escape(user.full_name or user.username or "مستخدم")
 
     if data == "sec_wrong":
         keyboard = [
@@ -1139,32 +1141,43 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "sec_correct":
         conn = get_db()
         cursor = conn.cursor()
-        user = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        user_row = cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         bonus_enabled = get_setting('welcome_bonus_enabled', '1') == '1'
         bonus_amt = float(get_setting('welcome_bonus', '500.0'))
         
-        if bonus_enabled and bonus_amt > 0 and user and user['got_welcome_bonus'] == 0:
-            before_cashier, after_cashier = update_cashier(-bonus_amt)
-            cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = 1, balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ?", (bonus_amt, bonus_amt, user_id))
+        bonus_granted = False
+        if bonus_enabled and bonus_amt > 0 and user_row and user_row['got_welcome_bonus'] == 0:
+            # ضمان أن البونص يضاف مرة واحدة فقط للعميل حتى لو تخطى سؤال الحماية الف مرة
+            cursor.execute(
+                "UPDATE users SET security_passed = 1, got_welcome_bonus = 1, balance = balance + ?, bot_balance = bot_balance + ? WHERE telegram_id = ? AND got_welcome_bonus = 0",
+                (bonus_amt, bonus_amt, user_id)
+            )
+            if cursor.rowcount > 0:
+                bonus_granted = True
+                conn.commit()
+                before_cashier, after_cashier = update_cashier(-bonus_amt)
+            else:
+                cursor.execute("UPDATE users SET security_passed = 1 WHERE telegram_id = ?", (user_id,))
+                conn.commit()
+        else:
+            cursor.execute("UPDATE users SET security_passed = 1 WHERE telegram_id = ?", (user_id,))
             conn.commit()
-            conn.close()
             
+        conn.close()
+
+        if bonus_granted:
             await query.message.edit_text(f"قلتلك حموية ماصدقتني! 🍯\n\n🎉 <b>لقد حصلت على بونص ترحيبي بقيمة {bonus_amt:.2f} NSP!</b>", parse_mode="HTML")
             
             await send_all_admins(
                 context,
                 f"⚠️ <b>إشعار خصم من الكاشيرة (بونص ترحيبي):</b>\n\n"
-                f"تم خصم مبلغ <b>{bonus_amt:.2f} NSP</b> من الكاشيرة لدخول شخص جديد (العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>) وحصوله على البونص.\n\n"
+                f"تم خصم مبلغ <b>{bonus_amt:.2f} NSP</b> من الكاشيرة لدخول شخص جديد:\n"
+                f"• العميل: <b>{user_name}</b>\n"
+                f"• الآيدي: <code>{user_id}</code>\n\n"
                 f"🏦 المبلغ القديم في الكاشيرة: <code>{before_cashier:.2f} NSP</code>\n"
                 f"🏦 المبلغ الجديد في الكاشيرة: <code>{after_cashier:.2f} NSP</code>"
             )
         else:
-            if user and user['got_welcome_bonus'] == 0:
-                cursor.execute("UPDATE users SET security_passed = 1, got_welcome_bonus = 1 WHERE telegram_id = ?", (user_id,))
-            else:
-                cursor.execute("UPDATE users SET security_passed = 1 WHERE telegram_id = ?", (user_id,))
-            conn.commit()
-            conn.close()
             await query.message.edit_text("قلتلك حموية ماصدقتني! 🍯 تم توثيق حسابك بنجاح.")
 
         await show_main_menu(update, context)
@@ -1177,16 +1190,11 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "check_sub":
-        is_subbed, unsub_list = await check_forced_sub(user_id, context)
-        if is_subbed:
+        if await check_forced_sub(user_id, context):
             await query.message.delete()
             await show_main_menu(update, context)
         else:
-            btns = []
-            for item in unsub_list:
-                btns.append([InlineKeyboardButton(f"📢 اشترك في: {item['name']}", url=item['url'])])
-            btns.append([InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")])
-            await query.message.edit_text("❌ لم تشترك في جميع القنوات المطلوبة بعد! يرجى الاشتراك ثم الضغط على زر التحقق.", reply_markup=InlineKeyboardMarkup(btns))
+            await update.effective_chat.send_message("❌ لم تشترك في كامل القنوات المطلوبة بعد.")
 
     elif data == "my_account":
         conn = get_db()
@@ -1424,23 +1432,28 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "adm_requests" and is_admin(user_id):
         conn = get_db()
         reqs = conn.execute("SELECT * FROM transactions WHERE status = 'pending' ORDER BY id DESC LIMIT 10").fetchall()
-        conn.close()
+        
         if not reqs:
+            conn.close()
             await update.effective_chat.send_message("✅ لا يوجد طلبات معلقة حالياً.")
             return
         for r in reqs:
+            u_row = conn.execute("SELECT username FROM users WHERE telegram_id = ?", (r['telegram_id'],)).fetchone()
+            req_user_name = html.escape(u_row['username'] if (u_row and u_row['username']) else "غير معروف")
             btns = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ قبول", callback_data=f"app_req_{r['id']}"), InlineKeyboardButton("❌ رفض", callback_data=f"rej_req_{r['id']}")]
             ])
             await update.effective_chat.send_message(
                 f"📥 <b>طلب {r['type']}</b>\n"
+                f"• العميل: <b>{req_user_name}</b>\n"
+                f"• الآيدي: <code>{r['telegram_id']}</code>\n"
                 f"• الوسيلة: <b>{r['method']}</b>\n"
-                f"• العميل: <code>{r['telegram_id']}</code>\n"
                 f"• المبلغ: <b>{r['amount']} NSP</b>\n"
                 f"• الرقم/العملية: <code>{r['tx_number']}</code>", 
                 reply_markup=btns, 
                 parse_mode="HTML"
             )
+        conn.close()
 
     elif data.startswith("app_req_") and is_admin(user_id):
         req_id = int(data.split("_")[2])
@@ -1450,10 +1463,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if r and r['status'] == 'pending':
             amt = float(r['amount'])
             user_target = r['telegram_id']
-            
             u_row = conn.execute("SELECT username FROM users WHERE telegram_id = ?", (user_target,)).fetchone()
-            u_target_name = html.escape(u_row['username']) if (u_row and u_row['username']) else "غير معروف"
-
+            target_name = html.escape(u_row['username'] if (u_row and u_row['username']) else "غير معروف")
+            
             if 'deposit' in r['type']:
                 before_cashier, after_cashier = update_cashier(amt)
                 conn.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (req_id,))
@@ -1464,7 +1476,8 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 msg_admin = (
                     f"✅ <b>تم قبول طلب الشحن وتحديث الكاشيرة!</b>\n"
-                    f"• العميل: <b>{u_target_name}</b> | ID: <code>{user_target}</code>\n"
+                    f"• العميل: <b>{target_name}</b>\n"
+                    f"• الآيدي: <code>{user_target}</code>\n"
                     f"• المبلغ المُضاف: <b>+{amt:.2f} NSP</b>\n"
                     f"🏦 <b>رصيد الكاشيرة قبل:</b> <code>{before_cashier:.2f} NSP</code>\n"
                     f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>"
@@ -1481,7 +1494,8 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 msg_admin = (
                     f"✅ <b>تم قبول طلب السحب وخصمه من الكاشيرة!</b>\n"
-                    f"• العميل: <b>{u_target_name}</b> | ID: <code>{user_target}</code>\n"
+                    f"• العميل: <b>{target_name}</b>\n"
+                    f"• الآيدي: <code>{user_target}</code>\n"
                     f"• المبلغ المخصوم: <b>-{amt:.2f} NSP</b>\n"
                     f"🏦 <b>رصيد الكاشيرة قبل:</b> <code>{before_cashier:.2f} NSP</code>\n"
                     f"🏦 <b>رصيد الكاشيرة بعد:</b> <code>{after_cashier:.2f} NSP</code>"
@@ -1525,9 +1539,49 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_chat.send_message("✍️ أدخل الكود المراد إلغاء تفعيله بالضبط:")
 
     elif data == "adm_edit_channels" and is_admin(user_id):
-        curr = get_setting('forced_channels', '')
-        context.user_data['state'] = 'ADM_WAIT_CHANNELS'
-        await update.effective_chat.send_message(f"📢 <b>القنوات الحالية:</b> <code>{curr or 'لا يوجد'}</code>\n\nأدخل معرّفات القنوات مفصولة بفاصلة (مثال: <code>@chan1,@chan2</code>):", parse_mode="HTML")
+        channels = get_forced_channels_list()
+        txt = "📢 <b>نظام الاشتراك الإجباري بالقنوات:</b>\n\n"
+        if not channels:
+            txt += "لا توجد قنوات إجبارية حالياً.\n"
+        else:
+            for idx, ch in enumerate(channels, 1):
+                txt += f"{idx}. <b>{html.escape(ch.get('name',''))}</b>\n   • المعرف: <code>{html.escape(ch.get('username',''))}</code>\n   • الرابط: {html.escape(ch.get('link',''))}\n\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("➕ إضافة قناة إجبارية جديد", callback_data="adm_add_ch_start")],
+            [InlineKeyboardButton("🗑 حذف قناة محدده", callback_data="adm_del_ch_menu")],
+            [InlineKeyboardButton("🧹 مسح كافة القنوات", callback_data="adm_clear_all_channels")],
+            [InlineKeyboardButton("⚙️ لوحة الآدمن", callback_data="admin_panel")]
+        ]
+        await update.effective_chat.send_message(txt, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+    elif data == "adm_add_ch_start" and is_admin(user_id):
+        context.user_data['state'] = 'ADM_WAIT_CH_USERNAME'
+        await update.effective_chat.send_message("✍️ <b>الخطوة 1/3:</b> أدخل معرف القناة (مثال: <code>@channel_username</code>):", parse_mode="HTML")
+
+    elif data == "adm_del_ch_menu" and is_admin(user_id):
+        channels = get_forced_channels_list()
+        if not channels:
+            await update.effective_chat.send_message("❌ لا توجد قنوات لحذفها.")
+            return
+        btns = []
+        for idx, ch in enumerate(channels):
+            btns.append([InlineKeyboardButton(f"🗑 حذف: {ch.get('name','')}", callback_data=f"adm_del_ch_{idx}")])
+        btns.append([InlineKeyboardButton("↩️ إلغاء", callback_data="adm_edit_channels")])
+        await update.effective_chat.send_message("اختر القناة المراد حذفها:", reply_markup=InlineKeyboardMarkup(btns))
+
+    elif data.startswith("adm_del_ch_") and is_admin(user_id):
+        idx = int(data.replace("adm_del_ch_", ""))
+        channels = get_forced_channels_list()
+        if 0 <= idx < len(channels):
+            removed = channels.pop(idx)
+            set_setting('forced_channels', json.dumps(channels, ensure_ascii=False))
+            await update.effective_chat.send_message(f"✅ تم حذف القناة <b>{html.escape(removed.get('name',''))}</b> بنجاح.", parse_mode="HTML")
+        await show_admin_panel(update, context)
+
+    elif data == "adm_clear_all_channels" and is_admin(user_id):
+        set_setting('forced_channels', '[]')
+        await update.effective_chat.send_message("✅ تم مسح جميع القنوات الإجبارية بنجاح.")
 
     elif data == "adm_add_admin" and is_admin(user_id):
         context.user_data['state'] = 'ADM_WAIT_NEW_ADMIN'
@@ -1607,6 +1661,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 6. معالج النصوص والرسائل وتفاعل الرموز (Text & Reaction Handling)
 # ==========================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # التفاعل التلقائي على الكلمات التي تبدأ بـ "برق" (⚡) أو "نار" (🔥)
     if update.message and update.message.text:
         msg_text = update.message.text.strip()
         if msg_text.startswith("برق"):
@@ -1628,11 +1683,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logging.error(f"Error adding fire reaction: {e}")
 
-    user_id = update.effective_user.id
-    user_name = html.escape(update.effective_user.full_name or update.effective_user.username or "غير معروف")
+    user = update.effective_user
+    user_id = user.id
+    user_name = html.escape(user.full_name or user.username or "مستخدم")
     text = update.message.text.strip() if (update.message and update.message.text) else ""
     state = context.user_data.get('state')
 
+    # التعرف التلقائي الذكي على أرقام وأكواد الهدايا حتى وإن فُقدت حالة الجلسة
     if not state and text:
         if text.upper().startswith("GIFT") or (len(text) >= 4 and not text.isdigit() and not text.startswith("/")):
             conn_check = get_db()
@@ -1804,7 +1861,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_all_admins(
                 context,
                 f"📥 <b>طلب شحن جديد!</b>\n"
-                f"• العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>\n"
+                f"• العميل: <b>{user_name}</b>\n"
+                f"• الآيدي: <code>{user_id}</code>\n"
                 f"• الوسيلة: <b>{method}</b>\n"
                 f"• المبلغ: <b>{amt:.2f} NSP</b>\n"
                 f"• رقم العملية: <code>{html.escape(tx_num)}</code>"
@@ -1857,7 +1915,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_all_admins(
                 context,
                 f"📤 <b>طلب سحب أرباح جديد!</b>\n"
-                f"• العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>\n"
+                f"• العميل: <b>{user_name}</b>\n"
+                f"• الآيدي: <code>{user_id}</code>\n"
                 f"• الوسيلة: <b>{method}</b>\n"
                 f"• المبلغ: <b>{amt:.2f} NSP</b>\n"
                 f"• رقم حساب المستلم: <code>{html.escape(acc_target)}</code>"
@@ -1866,7 +1925,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == 'WAIT_WIN_SHOT':
-            msg_txt = f"📸 <b>صورة/إشعار فوز من عميل!</b>\n• العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>"
+            msg_txt = f"📸 <b>صورة/إشعار فوز من عميل!</b>\n• العميل: <b>{user_name}</b>\n• الآيدي: <code>{user_id}</code>"
             if text:
                 msg_txt += f"\n\nالرسالة:\n{html.escape(text)}"
             
@@ -1891,9 +1950,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_all_admins(
                 context,
                 f"💬 <b>رسالة دعم جديدة من عميل!</b>\n"
-                f"• العميل: <b>{user_name}</b> | ID: <code>{user_id}</code>\n\n"
+                f"• العميل: <b>{user_name}</b>\n"
+                f"• الآيدي: <code>{user_id}</code>\n\n"
                 f"الرسالة:\n{html.escape(text)}",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 الرد على العميل", callback_data=f"reply_support_{user_id}")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"💬 الرد على العميل ({user_name})", callback_data=f"reply_support_{user_id}")]])
             )
             conn.close()
             context.user_data.clear()
@@ -2144,9 +2204,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.close()
                 return
 
-            elif state == 'ADM_WAIT_CHANNELS':
-                set_setting('forced_channels', text)
-                await update.message.reply_text(f"✅ تم تحديث قنوات الاشتراك الإجباري إلى:\n<code>{html.escape(text)}</code>", parse_mode="HTML")
+            # --- الخطوات المتطورة لإضافة القنوات الإجبارية الثلاث (المعرف، الاسم بالعربي، الرابط) ---
+            elif state == 'ADM_WAIT_CH_USERNAME':
+                ch_user = text.strip()
+                if not ch_user.startswith('@') and not ch_user.startswith('-') and not ch_user.isdigit():
+                    ch_user = '@' + ch_user
+                context.user_data['new_ch_username'] = ch_user
+                context.user_data['state'] = 'ADM_WAIT_CH_NAME'
+                await update.message.reply_text("✍️ <b>الخطوة 2/3:</b> أدخل اسم القناة بالعربي (مثال: <code>قناة المنصة الرسمية</code>):", parse_mode="HTML")
+                conn.close()
+                return
+
+            elif state == 'ADM_WAIT_CH_NAME':
+                context.user_data['new_ch_name'] = text.strip()
+                context.user_data['state'] = 'ADM_WAIT_CH_LINK'
+                await update.message.reply_text("✍️ <b>الخطوة 3/3:</b> أدخل رابط القناة (مثال: <code>https://t.me/channel_link</code>):", parse_mode="HTML")
+                conn.close()
+                return
+
+            elif state == 'ADM_WAIT_CH_LINK':
+                ch_link = text.strip()
+                ch_user = context.user_data.get('new_ch_username')
+                ch_name = context.user_data.get('new_ch_name')
+
+                channels = get_forced_channels_list()
+                channels.append({
+                    "username": ch_user,
+                    "name": ch_name,
+                    "link": ch_link
+                })
+                set_setting('forced_channels', json.dumps(channels, ensure_ascii=False))
+                
+                await update.message.reply_text(
+                    f"✅ <b>تم إضافة القناة إلى نظام الاشتراك الصارم بنجاح!</b>\n\n"
+                    f"• اسم القناة: <b>{html.escape(ch_name)}</b>\n"
+                    f"• معرف القناة: <code>{html.escape(ch_user)}</code>\n"
+                    f"• الرابط: {html.escape(ch_link)}",
+                    parse_mode="HTML"
+                )
                 context.user_data.clear()
                 conn.close()
                 return
@@ -2218,30 +2313,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             elif state == 'ADM_WAIT_BROADCAST':
-                broadcast_txt = text
-                conn_b = get_db()
-                all_u = conn_b.execute("SELECT telegram_id FROM users WHERE is_banned = 0").fetchall()
-                conn_b.close()
-                count_ok = 0
-                count_fail = 0
-                await update.message.reply_text(f"⏳ جاري إرسال الإذاعة إلى {len(all_u)} مستخدم...")
-                for u_row in all_u:
+                users = cursor.execute("SELECT telegram_id FROM users").fetchall()
+                conn.close()
+                success, failed = 0, 0
+                await update.message.reply_text("⏳ جاري بدء الإذاعة الجماعية...")
+                for u in users:
                     try:
-                        await context.bot.send_message(chat_id=u_row['telegram_id'], text=broadcast_txt, parse_mode="HTML")
-                        count_ok += 1
+                        await context.bot.send_message(u['telegram_id'], text, parse_mode="HTML")
+                        success += 1
                         await asyncio.sleep(0.05)
                     except Exception:
-                        count_fail += 1
-                await update.message.reply_text(f"✅ تم الانتهاء من الإذاعة!\n• نجح: {count_ok}\n• فشل: {count_fail}")
+                        failed += 1
+                await update.message.reply_text(f"📢 <b>تمت الإذاعة بنجاح!</b>\n\n• أُرسلت إلى: <b>{success}</b> مستخدم\n• فشل الإرسال إلى: <b>{failed}</b> مستخدم", parse_mode="HTML")
                 context.user_data.clear()
-                conn.close()
                 return
 
             elif state == 'ADM_WAIT_PRIV_ID':
                 if text.isdigit():
                     context.user_data['priv_target_id'] = int(text)
                     context.user_data['state'] = 'ADM_WAIT_PRIV_MSG'
-                    await update.message.reply_text(f"✍️ اكتب الرسالة المراد إرسالها للعميل <code>{text}</code>:", parse_mode="HTML")
+                    await update.message.reply_text(f"✍️ اكتب الرسالة التي تريد إرسالها للعميل <code>{text}</code>:", parse_mode="HTML")
                 else:
                     await update.message.reply_text("❌ أدخل آيدي رقمي صحيح!")
                 conn.close()
@@ -2250,52 +2341,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif state == 'ADM_WAIT_PRIV_MSG':
                 target_id = context.user_data.get('priv_target_id')
                 try:
-                    await context.bot.send_message(chat_id=target_id, text=f"💬 <b>رسالة خاصة من الإدارة:</b>\n\n{html.escape(text)}", parse_mode="HTML")
-                    await update.message.reply_text(f"✅ تم إرسال الرسالة إلى العميل <code>{target_id}</code> بنجاح.", parse_mode="HTML")
+                    await context.bot.send_message(target_id, f"💬 <b>رسالة خاصة من الإدارة:</b>\n\n{html.escape(text)}", parse_mode="HTML")
+                    await update.message.reply_text("✅ تم إرسال الرسالة الخاصة للعميل بنجاح.")
                 except Exception as e:
-                    await update.message.reply_text(f"❌ تعذر إرسال الرسالة للعميل: {e}")
+                    await update.message.reply_text(f"❌ فشل إرسال الرسالة: {e}")
                 context.user_data.clear()
                 conn.close()
                 return
 
             elif state == 'WAIT_ADMIN_REPLY_SUPP':
-                target = context.user_data.get('support_target')
+                target_id = context.user_data.get('support_target')
                 try:
-                    await context.bot.send_message(chat_id=target, text=f"💬 <b>رد من الدعم الفني:</b>\n\n{html.escape(text)}", parse_mode="HTML")
-                    await update.message.reply_text(f"✅ تم إرسال الرد للعميل <code>{target}</code> بنجاح.", parse_mode="HTML")
+                    await context.bot.send_message(target_id, f"💬 <b>رد الدعم الفني:</b>\n\n{html.escape(text)}", parse_mode="HTML")
+                    await update.message.reply_text("✅ تم إرسال الرد للعميل بنجاح.")
                 except Exception as e:
-                    await update.message.reply_text(f"❌ تعذر إرسال الرد للعميل: {e}")
+                    await update.message.reply_text(f"❌ فشل إرسال الرد: {e}")
                 context.user_data.clear()
                 conn.close()
                 return
 
-        conn.close()
     except Exception as e:
-        logging.error(f"Error handling message: {e}")
+        logging.error(f"Error in handle_message: {e}")
+    finally:
         try:
             conn.close()
         except Exception: pass
 
 # ==========================================================
-# 7. التشغيل الرئيسي للبوت
+# 7. تشغيل البوت الخادم والخلفية
 # ==========================================================
 def main():
     global MAIN_LOOP, bot_app
     init_db()
     
-    t = threading.Thread(target=start_health_check_server, daemon=True)
-    t.start()
+    server_thread = threading.Thread(target=start_health_check_server, daemon=True)
+    server_thread.start()
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    MAIN_LOOP = loop
     
     app = Application.builder().token(BOT_TOKEN).build()
     bot_app = app
-    
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_router))
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
-    
-    loop = asyncio.get_event_loop()
-    MAIN_LOOP = loop
-    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_message))
+
     logging.info("AUREX Bot starting...")
     app.run_polling(drop_pending_updates=True)
 
