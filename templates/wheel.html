@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AUREX Lucky Wheel</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         * {
             box-sizing: border-box;
@@ -12,10 +13,11 @@
             padding: 0;
             font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
             user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            background: radial-gradient(circle at center, #1b0203 0%, #080102 60%, #000000 100%);
+            background: radial-gradient(circle at center, #2c0306 0%, #0d0102 60%, #000000 100%);
             color: #ffffff;
             text-align: center;
             display: flex;
@@ -25,178 +27,311 @@
             min-height: 100vh;
             padding: 15px;
             overflow-x: hidden;
+            position: relative;
+        }
+
+        /* خلفية توهج ديناميكية */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle, rgba(229, 9, 20, 0.25) 0%, rgba(212, 175, 55, 0.15) 50%, transparent 70%);
+            z-index: 0;
+            pointer-events: none;
+            animation: ambientGlow 4s infinite alternate ease-in-out;
+        }
+
+        @keyframes ambientGlow {
+            0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.7; }
+            100% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
         }
 
         .header-brand {
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+            z-index: 1;
         }
 
         h1 {
-            color: #e50914;
-            font-size: 28px;
+            background: linear-gradient(180deg, #fff7d6 0%, #d4af37 50%, #aa7c11 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 30px;
             font-weight: 900;
             letter-spacing: 2px;
             text-transform: uppercase;
-            text-shadow: 0 0 15px rgba(229, 9, 20, 0.7), 0 0 30px rgba(212, 175, 55, 0.4);
+            filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.6));
         }
 
         p.subtitle {
             font-size: 13px;
-            color: #d4af37;
+            color: #e0e0e0;
             letter-spacing: 1px;
-            margin-top: 3px;
+            margin-top: 2px;
+            opacity: 0.9;
+        }
+
+        /* حاوية العجلة مع الإطار واللمبات */
+        .wheel-outer-wrapper {
+            position: relative;
+            width: 350px;
+            height: 350px;
+            margin: 10px auto;
+            border-radius: 50%;
+            padding: 15px;
+            background: radial-gradient(circle, #5c0206 0%, #200002 100%);
+            border: 4px solid #d4af37;
+            box-shadow: 0 0 30px rgba(229, 9, 20, 0.6), inset 0 0 20px rgba(0,0,0,0.8), 0 0 15px rgba(212, 175, 55, 0.5);
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* حلقة لمبات الإنارة LED */
+        .bulbs-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .bulb {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #fff;
+            top: 50%;
+            left: 50%;
+            margin: -5px;
+            box-shadow: 0 0 8px #fff;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+
+        .bulb.off {
+            background-color: #3a2e10;
+            box-shadow: none;
+        }
+
+        .bulb.on-gold {
+            background-color: #fff2a3;
+            box-shadow: 0 0 10px #ffe600, 0 0 15px #ffe600;
+        }
+
+        .bulb.on-red {
+            background-color: #ff7b7b;
+            box-shadow: 0 0 10px #ff0000, 0 0 15px #ff0000;
         }
 
         .wheel-container {
             position: relative;
-            width: 330px;
-            height: 330px;
-            margin: 15px auto;
+            width: 310px;
+            height: 310px;
             border-radius: 50%;
-            box-shadow: 0 0 35px rgba(229, 9, 20, 0.5), inset 0 0 15px rgba(212, 175, 55, 0.5);
-            padding: 5px;
-            background: linear-gradient(145deg, #d4af37, #5c0206, #d4af37);
+            box-shadow: 0 0 15px rgba(0,0,0,0.9);
         }
 
         #canvas {
-            width: 320px;
-            height: 320px;
+            width: 310px;
+            height: 310px;
             border-radius: 50%;
-            background-color: #0d0d0d;
             display: block;
         }
 
+        /* السهم / المؤشر الذهبي الفاخر */
         .pointer {
             position: absolute;
-            top: -12px;
+            top: -18px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 16px solid transparent;
-            border-right: 16px solid transparent;
-            border-top: 32px solid #d4af37;
+            border-left: 18px solid transparent;
+            border-right: 18px solid transparent;
+            border-top: 36px solid #ffe600;
             z-index: 10;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.9));
+            filter: drop-shadow(0 5px 8px rgba(0,0,0,0.9));
+        }
+
+        .pointer::before {
+            content: '';
+            position: absolute;
+            top: -38px;
+            left: -12px;
+            width: 0;
+            height: 0;
+            border-left: 12px solid transparent;
+            border-right: 12px solid transparent;
+            border-top: 26px solid #d4af37;
         }
 
         .pointer::after {
             content: '';
             position: absolute;
-            top: -34px;
-            left: -8px;
-            width: 16px;
-            height: 16px;
-            background: #e50914;
+            top: -42px;
+            left: -7px;
+            width: 14px;
+            height: 14px;
+            background: radial-gradient(circle, #ffffff 0%, #e50914 100%);
             border-radius: 50%;
-            box-shadow: 0 0 8px #e50914;
+            border: 2px solid #fff;
+            box-shadow: 0 0 10px #e50914;
         }
 
+        /* زر الدوران المطور */
         .center-btn {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 70px;
-            height: 70px;
-            background: radial-gradient(circle, #e50914 0%, #700004 70%, #300000 100%);
-            border: 3px solid #d4af37;
+            width: 72px;
+            height: 72px;
+            background: radial-gradient(circle at 30% 30%, #ff2a35 0%, #8b0005 70%, #4a0002 100%);
+            border: 4px solid #f2d06b;
             border-radius: 50%;
             color: #ffffff;
             font-weight: 900;
-            font-size: 16px;
+            font-size: 17px;
+            letter-spacing: 1px;
             cursor: pointer;
             z-index: 5;
-            box-shadow: 0 0 20px rgba(0,0,0,0.9), inset 0 0 10px rgba(212, 175, 55, 0.6);
+            box-shadow: 0 0 20px rgba(0,0,0,0.9), inset 0 3px 5px rgba(255,255,255,0.5), inset 0 -4px 6px rgba(0,0,0,0.6);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.2s ease;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        .center-btn:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.8), inset 0 3px 5px rgba(255,255,255,0.6);
         }
 
         .center-btn:active {
             transform: translate(-50%, -50%) scale(0.92);
         }
 
+        .center-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            filter: grayscale(0.5);
+        }
+
+        /* كارت المعلومات */
         .info-card {
-            background: rgba(20, 5, 7, 0.85);
+            background: rgba(22, 6, 9, 0.75);
             border: 1px solid rgba(212, 175, 55, 0.4);
-            border-radius: 16px;
-            padding: 14px 20px;
+            border-radius: 20px;
+            padding: 12px 20px;
             width: 100%;
             max-width: 330px;
             margin-top: 15px;
             display: flex;
             justify-content: space-around;
-            backdrop-filter: blur(8px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255,255,255,0.1);
+            z-index: 1;
         }
 
         .info-item {
             display: flex;
             flex-direction: column;
+            align-items: center;
         }
 
         .info-item span.label {
             font-size: 11px;
-            color: #aaa;
-            margin-bottom: 2px;
+            color: #b3a286;
+            margin-bottom: 3px;
+            font-weight: 700;
         }
 
         .info-item span.val {
             font-size: 18px;
-            font-weight: bold;
-            color: #d4af37;
-            text-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
+            font-weight: 900;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
         }
 
+        /* نتائج الفوز والخسارة */
         #result-modal {
-            margin-top: 15px;
-            font-size: 16px;
-            font-weight: bold;
-            min-height: 28px;
-            transition: all 0.3s ease;
+            margin-top: 12px;
+            font-size: 17px;
+            font-weight: 900;
+            min-height: 30px;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .win-msg {
             color: #2ecc71;
-            text-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
-            animation: pulse 1s infinite alternate;
+            text-shadow: 0 0 12px rgba(46, 204, 113, 0.8);
+            animation: winBounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite alternate;
         }
 
         .lose-msg {
-            color: #e74c3c;
-            text-shadow: 0 0 10px rgba(231, 76, 60, 0.5);
+            color: #ff4757;
+            text-shadow: 0 0 10px rgba(255, 71, 87, 0.6);
         }
 
-        @keyframes pulse {
-            from { transform: scale(1); }
-            to { transform: scale(1.05); }
+        @keyframes winBounce {
+            from { transform: scale(0.95); }
+            to { transform: scale(1.08); }
+        }
+
+        /* كافاس قصاصات الاحتفال بالفوز */
+        #fxCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 99;
         }
     </style>
 </head>
 <body>
+
+    <canvas id="fxCanvas"></canvas>
 
     <div class="header-brand">
         <h1>AUREX WHEEL</h1>
         <p class="subtitle">عجلة الحظ التفاعلية الفاخرة</p>
     </div>
 
-    <div class="wheel-container">
-        <div class="pointer"></div>
-        <canvas id="canvas" width="320" height="320"></canvas>
-        <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
+    <!-- الإطار الخارجي المزود باللمبات -->
+    <div class="wheel-outer-wrapper">
+        <div class="bulbs-container" id="bulbsContainer"></div>
+        
+        <div class="wheel-container">
+            <div class="pointer"></div>
+            <canvas id="canvas" width="310" height="310"></canvas>
+            <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
+        </div>
     </div>
 
     <div id="result-modal"></div>
 
     <div class="info-card">
         <div class="info-item">
-            <span class="label">اللفات المتاحة</span>
+            <span class="label">🎲 اللفات المتاحة</span>
             <span class="val" id="spinsCount">--</span>
         </div>
+        <div class="info-item" style="width: 1px; background: rgba(212,175,55,0.2); margin: 2px 0;"></div>
         <div class="info-item">
-            <span class="label">رصيد البوت</span>
+            <span class="label">💎 رصيد البوت</span>
             <span class="val" id="userBal">--</span>
         </div>
     </div>
@@ -219,24 +354,82 @@
         let currentAngle = 0;
         let isSpinning = false;
 
+        // --- إنشاء لمبات الإنارة حول العجلة ---
+        const bulbsContainer = document.getElementById("bulbsContainer");
+        const totalBulbs = 24;
+        const bulbElements = [];
+
+        function createBulbs() {
+            const radius = 166; // نصف قطر توزيع اللمبات
+            const center = 175; // مركز الحاوية الخارجية
+            for (let i = 0; i < totalBulbs; i++) {
+                const angle = (i * (2 * Math.PI / totalBulbs));
+                const x = center + radius * Math.cos(angle);
+                const y = center + radius * Math.sin(angle);
+
+                const bulb = document.createElement("div");
+                bulb.className = "bulb";
+                bulb.style.left = `${x}px`;
+                bulb.style.top = `${y}px`;
+                bulbsContainer.appendChild(bulb);
+                bulbElements.push(bulb);
+            }
+        }
+        createBulbs();
+
+        // تأثير وميض اللمبات
+        let bulbStep = 0;
+        let bulbInterval = setInterval(animateBulbs, 400);
+
+        function animateBulbs() {
+            bulbStep++;
+            bulbElements.forEach((bulb, idx) => {
+                if (isSpinning) {
+                    // ووميض سريع ومتتابع أثناء الدوران
+                    const active = (idx + bulbStep) % 2 === 0;
+                    bulb.className = active ? "bulb on-gold" : "bulb on-red";
+                } else {
+                    // ووميض هادئ وتبادلي أثناء الانتظار
+                    if ((idx + bulbStep) % 2 === 0) {
+                        bulb.className = "bulb on-gold";
+                    } else {
+                        bulb.className = "bulb off";
+                    }
+                }
+            });
+        }
+
+        // --- رسم العجلة بتصميم ذو جودة عالية ---
         function drawWheel() {
-            const radius = 160;
+            const radius = canvas.width / 2;
             const sliceAngle = (2 * Math.PI) / numSlices;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             for (let i = 0; i < numSlices; i++) {
                 const angle = currentAngle + i * sliceAngle;
+                
+                // رسم الشريحة
                 ctx.beginPath();
                 ctx.moveTo(radius, radius);
                 ctx.arc(radius, radius, radius, angle, angle + sliceAngle);
                 ctx.closePath();
 
-                // التبديل بين الأحمر الداكن والأسود الداكن
-                ctx.fillStyle = (i % 2 === 0) ? "#120203" : "#80050a";
+                // ألوان احترافية بالتناوب
+                if (i % 2 === 0) {
+                    let grad = ctx.createRadialGradient(radius, radius, 10, radius, radius, radius);
+                    grad.addColorStop(0, '#2a0205');
+                    grad.addColorStop(1, '#0f0102');
+                    ctx.fillStyle = grad;
+                } else {
+                    let grad = ctx.createRadialGradient(radius, radius, 10, radius, radius, radius);
+                    grad.addColorStop(0, '#a80a12');
+                    grad.addColorStop(1, '#5e0307');
+                    ctx.fillStyle = grad;
+                }
                 ctx.fill();
 
-                // إطار ذهبي لكل شريحة
+                // حدود الشريحة الذهبيه
                 ctx.strokeStyle = "#d4af37";
                 ctx.lineWidth = 1.5;
                 ctx.stroke();
@@ -246,13 +439,34 @@
                 ctx.translate(radius, radius);
                 ctx.rotate(angle + sliceAngle / 2);
                 ctx.textAlign = "right";
-                ctx.fillStyle = (values[i] === 10000 || values[i] === 500) ? "#d4af37" : "#ffffff";
-                ctx.font = "bold 13px Cairo, Arial";
-                ctx.fillText(values[i] + " NSP", radius - 15, 5);
+
+                // نصوص خاصة للمبالغ الكبيرة
+                if (values[i] === 10000 || values[i] === 500) {
+                    ctx.fillStyle = "#ffe600";
+                    ctx.font = "900 14px Cairo, Arial";
+                    ctx.shadowColor = "rgba(255, 230, 0, 0.8)";
+                    ctx.shadowBlur = 8;
+                } else {
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 13px Cairo, Arial";
+                    ctx.shadowBlur = 0;
+                }
+
+                ctx.fillText(values[i] + " NSP", radius - 18, 5);
                 ctx.restore();
             }
+
+            // إطار إضافي داخلي وذهبي للمركز
+            ctx.beginPath();
+            ctx.arc(radius, radius, 40, 0, 2 * Math.PI);
+            ctx.fillStyle = "#110203";
+            ctx.fill();
+            ctx.strokeStyle = "#d4af37";
+            ctx.lineWidth = 3;
+            ctx.stroke();
         }
 
+        // --- جلب بيانات المستخدم ---
         async function fetchUserData() {
             if (!userId) {
                 document.getElementById("result-modal").innerText = "⚠️ افتح العجلة عبر البوت مباشرة.";
@@ -271,11 +485,16 @@
             }
         }
 
+        // --- عملية الدوران ---
         async function startSpin() {
             if (isSpinning || !userId) return;
             isSpinning = true;
             document.getElementById("spinBtn").disabled = true;
             document.getElementById("result-modal").innerText = "";
+
+            // تسريع وميض اللمبات أثناء اللف
+            clearInterval(bulbInterval);
+            bulbInterval = setInterval(animateBulbs, 100);
 
             try {
                 const res = await fetch('/api/wheel/spin', {
@@ -289,6 +508,8 @@
                     document.getElementById("result-modal").innerHTML = `<span class="lose-msg">❌ ${data.error || "عذراً، حدث خطأ!"}</span>`;
                     isSpinning = false;
                     document.getElementById("spinBtn").disabled = false;
+                    clearInterval(bulbInterval);
+                    bulbInterval = setInterval(animateBulbs, 400);
                     return;
                 }
 
@@ -322,11 +543,17 @@
                         drawWheel();
                         isSpinning = false;
                         document.getElementById("spinBtn").disabled = false;
+
+                        // إعادة اللمبات إلى السرعة الطبيعية
+                        clearInterval(bulbInterval);
+                        bulbInterval = setInterval(animateBulbs, 400);
+
                         document.getElementById("spinsCount").innerText = data.free_spins_left;
                         document.getElementById("userBal").innerText = (data.new_bot_balance || 0).toFixed(2) + " NSP";
 
                         if (data.reward > 0) {
                             document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
+                            triggerConfetti(); // إطلاق الاحتفالات عند الفوز
                         } else {
                             document.getElementById("result-modal").innerHTML = `<span class="lose-msg">💔 حظ أوفر في المرة القادمة!</span>`;
                         }
@@ -337,8 +564,64 @@
             } catch (e) {
                 isSpinning = false;
                 document.getElementById("spinBtn").disabled = false;
+                clearInterval(bulbInterval);
+                bulbInterval = setInterval(animateBulbs, 400);
                 document.getElementById("result-modal").innerText = "❌ خطأ في الشبكة";
             }
+        }
+
+        // --- تأثير قصاصات الاحتفال بالفوز (Confetti FX) ---
+        const fxCanvas = document.getElementById("fxCanvas");
+        const fxCtx = fxCanvas.getContext("2d");
+        let particles = [];
+
+        function resizeFxCanvas() {
+            fxCanvas.width = window.innerWidth;
+            fxCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeFxCanvas);
+        resizeFxCanvas();
+
+        function triggerConfetti() {
+            particles = [];
+            const colors = ['#ffd700', '#2ecc71', '#e50914', '#ffffff', '#ff007f'];
+            for (let i = 0; i < 70; i++) {
+                particles.push({
+                    x: fxCanvas.width / 2,
+                    y: fxCanvas.height / 2,
+                    vx: (Math.random() - 0.5) * 12,
+                    vy: (Math.random() - 0.7) * 12,
+                    size: Math.random() * 8 + 4,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    alpha: 1,
+                    rotation: Math.random() * 360
+                });
+            }
+            requestAnimationFrame(updateConfetti);
+        }
+
+        function updateConfetti() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+            let alive = false;
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // Gravity
+                p.alpha -= 0.015;
+                p.rotation += 5;
+
+                if (p.alpha > 0) {
+                    alive = true;
+                    fxCtx.save();
+                    fxCtx.globalAlpha = p.alpha;
+                    fxCtx.translate(p.x, p.y);
+                    fxCtx.rotate(p.rotation * Math.PI / 180);
+                    fxCtx.fillStyle = p.color;
+                    fxCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                    fxCtx.restore();
+                }
+            });
+            if (alive) requestAnimationFrame(updateConfetti);
         }
 
         drawWheel();
