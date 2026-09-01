@@ -97,12 +97,14 @@ def init_db():
             username TEXT,
             site_username TEXT UNIQUE,
             site_password TEXT,
+            balance REAL DEFAULT 0.0,
             bot_balance REAL DEFAULT 0.0,
             site_balance REAL DEFAULT 0.0,
             total_spent REAL DEFAULT 0.0,
             deposit_count INTEGER DEFAULT 0,
             withdraw_count INTEGER DEFAULT 0,
             referrals_count INTEGER DEFAULT 0,
+            spins_count INTEGER DEFAULT 0,
             free_spins INTEGER DEFAULT 0,
             referred_by INTEGER,
             got_welcome_bonus INTEGER DEFAULT 0,
@@ -118,12 +120,14 @@ def init_db():
     user_columns = [
         ("site_username", "TEXT UNIQUE"),
         ("site_password", "TEXT"),
+        ("balance", "REAL DEFAULT 0.0"),
         ("bot_balance", "REAL DEFAULT 0.0"),
         ("site_balance", "REAL DEFAULT 0.0"),
         ("total_spent", "REAL DEFAULT 0.0"),
         ("deposit_count", "INTEGER DEFAULT 0"),
         ("withdraw_count", "INTEGER DEFAULT 0"),
         ("referrals_count", "INTEGER DEFAULT 0"),
+        ("spins_count", "INTEGER DEFAULT 0"),
         ("free_spins", "INTEGER DEFAULT 0"),
         ("referred_by", "INTEGER"),
         ("got_welcome_bonus", "INTEGER DEFAULT 0"),
@@ -162,7 +166,7 @@ def init_db():
         )
     ''')
 
-    # 4. جدول الأكواد الموحد
+    # 4. جدول الأكواد الموحد (يدعم active و is_active للتوافق)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS gift_codes (
             code TEXT PRIMARY KEY,
@@ -170,14 +174,16 @@ def init_db():
             max_uses INTEGER,
             used_count INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1,
+            is_active INTEGER DEFAULT 1,
             bot_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    try:
-        cursor.execute("ALTER TABLE gift_codes ADD COLUMN active INTEGER DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass
+    for code_col in [("active", "INTEGER DEFAULT 1"), ("is_active", "INTEGER DEFAULT 1")]:
+        try:
+            cursor.execute(f"ALTER TABLE gift_codes ADD COLUMN {code_col[0]} {code_col[1]}")
+        except sqlite3.OperationalError:
+            pass
 
     # 5. سجل الأكواد المستخدمة
     cursor.execute('''
@@ -189,7 +195,17 @@ def init_db():
         )
     ''')
 
-    # 6. إعدادات النظام
+    # 6. وسائل الدفع
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS payment_methods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            number TEXT,
+            active INTEGER DEFAULT 1
+        )
+    ''')
+
+    # 7. إعدادات النظام
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -846,26 +862,30 @@ def wheel_spin():
         'free_spins_left': updated_user['free_spins'] if updated_user and updated_user['free_spins'] is not None else 0
     })
 
-# ==================== الأكواد وإشعارات التلغرام ====================
+# ==================== إدارة الأكواد المحدثة والمصلحة ====================
 
 @app.route('/api/code/create', methods=['POST'])
 def create_code():
+    """
+    توليد الأكواد بالتسلسل:
+    1. يطلب المبلغ أولاً (amount)
+    2. عدد الاستخدامات للكود الواحد (max_uses)
+    3. كم كود مطلوب توليده (count)
+    خصم القيمة مباشرة من الكاشيرة
+    """
     data = get_req_data()
-    code = str(data.get('code', '')).strip().upper()
     try:
         amount = float(data.get('amount', 0))
         max_uses = int(data.get('max_uses', 1))
+        count = int(data.get('count', 1))  # عدد الأكواد المطلوب توليدها
         bot_id = int(data.get('bot_id', 1))
     except (ValueError, TypeError):
         return jsonify({'status': 'error', 'error': 'بيانات الأرقام غير صالحة'}), 400
 
-    if amount <= 0 or max_uses <= 0:
-        return jsonify({'status': 'error', 'error': 'يرجى إدخال مبلغ وعدد استخدامات صالحين'}), 400
+    if amount <= 0 or max_uses <= 0 or count <= 0:
+        return jsonify({'status': 'error', 'error': 'يرجى إدخال قيم صحيحة للمبلغ وعدد الاستخدامات وعدد الأكواد'}), 400
 
-    if not code:
-        code = "AUREX-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-    total_cost = amount * max_uses
+    total_cost = amount * max_uses * count
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -873,11 +893,25 @@ def create_code():
 
     if current_cashier < total_cost:
         conn.close()
-        return jsonify({'status': 'error', 'error': f'رصيد كاشيرة البوت غير كافٍ! المتاح: {current_cashier}'}), 400
+        return jsonify({'status': 'error', 'error': f'رصيد كاشيرة البوت غير كافٍ! المطلوب: {total_cost}، المتاح: {current_cashier}'}), 400
+
+    created_codes = []
+    base_code_input = str(data.get('code', '')).strip().upper()
 
     try:
-        cursor.execute("INSERT INTO gift_codes (code, amount, max_uses, used_count, active, bot_id) VALUES (?, ?, ?, 0, 1, ?)",
-                       (code, amount, max_uses, bot_id))
+        for i in range(count):
+            if base_code_input and count == 1:
+                code = base_code_input
+            else:
+                code = "AUREX-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+            cursor.execute("""
+                INSERT INTO gift_codes (code, amount, max_uses, used_count, active, is_active, bot_id) 
+                VALUES (?, ?, ?, 0, 1, 1, ?)
+            """, (code, amount, max_uses, bot_id))
+            created_codes.append(code)
+
+        # الخصم الفوري والمباشر من الكاشيرة عند التوليد
         old_cashier, new_cashier = update_bot_cashier(cursor, -total_cost, bot_id)
 
         conn.commit()
@@ -885,27 +919,36 @@ def create_code():
 
         return jsonify({
             'status': 'success',
-            'code': code,
+            'codes': created_codes,
+            'code': created_codes[0] if len(created_codes) == 1 else created_codes,
             'amount': amount,
             'max_uses': max_uses,
+            'count': count,
             'bot_id': bot_id,
+            'total_deducted': total_cost,
             'new_cashier': new_cashier,
-            'message': f'تم توليد الكود {code} وخصم {total_cost} من كاشيرة البوت بنجاح'
+            'message': f'تم توليد {count} كود بنجاح وخصم {total_cost}$ من كاشيرة البوت فوراً'
         })
     except sqlite3.IntegrityError:
         conn.close()
-        return jsonify({'status': 'error', 'error': 'هذا الكود موجود سابقاً، يرجى اختيار كود آخر'}), 400
+        return jsonify({'status': 'error', 'error': 'أحد الأكواد المولدة موجود مسبقاً، يرجى المحاولة مجدداً'}), 400
 
 @app.route('/api/code/use', methods=['POST'])
 def use_code():
+    """
+    تفعيل الكود للعميل:
+    - الكود غير موجود -> "الكود غير صحيح"
+    - الكود مستخدم سابقاً / ملغى / منتهي -> "الكود مستخدم"
+    - الكود يعمل -> "تم تفعيل واضافة الرصيد الى محفظة البوت"
+    """
     data = get_req_data()
     telegram_id = get_authenticated_user_id() or data.get('telegram_id') or data.get('user_id')
     code_text = str(data.get('code', '')).strip().upper()
 
     if not telegram_id:
-        return jsonify({'status': 'error', 'error': 'تعذر تحديد آيدي المستخدم لتفعيل الكود'}), 400
+        return jsonify({'status': 'error', 'error': 'تعذر تحديد آيدي المستخدم'}), 400
     if not code_text:
-        return jsonify({'status': 'error', 'error': 'يرجى إدخال كود الهدية'}), 400
+        return jsonify({'status': 'error', 'error': 'الكود غير صحيح'}), 400
 
     try:
         telegram_id = int(telegram_id)
@@ -916,7 +959,7 @@ def use_code():
     cursor = conn.cursor()
 
     try:
-        # 1. التأكد من وجود الحساب
+        # التأكد من وجود الحساب
         user = cursor.execute("SELECT * FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
         if not user:
             cursor.execute("""
@@ -925,42 +968,48 @@ def use_code():
             """, (telegram_id, f"user_{telegram_id}", f"user_{telegram_id}", f"pass_{telegram_id}"))
             conn.commit()
 
-        # 2. البحث عن الكود بغض النظر عن حالة تفعيله لتشخيص السبب الدقيق
+        # 1. البحث عن الكود في القاعدة
         code_obj = cursor.execute("SELECT * FROM gift_codes WHERE UPPER(code) = ?", (code_text,)).fetchone()
         
         if not code_obj:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'الكود غير موجود أو غير صحيح'}), 400
+            return jsonify({'status': 'error', 'error': 'الكود غير صحيح'}), 400
 
-        if code_obj['active'] == 0:
-            conn.close()
-            return jsonify({'status': 'error', 'error': 'هذا الكود تم إلغاؤه أو غير مفعل'}), 400
-
+        # 2. التحقق من حالة الفعالية والاستخدامات
+        active = code_obj['active'] if code_obj['active'] is not None else code_obj['is_active']
         used_count = code_obj['used_count'] if code_obj['used_count'] is not None else 0
         max_uses = code_obj['max_uses'] if code_obj['max_uses'] is not None else 1
         amount = float(code_obj['amount']) if code_obj['amount'] is not None else 0.0
 
-        if used_count >= max_uses:
+        if active == 0 or used_count >= max_uses:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'تم استخدام هذا الكود بالكامل للعدد المسموح به'}), 400
+            return jsonify({'status': 'error', 'error': 'الكود مستخدم'}), 400
 
-        # 3. التحقق مما إذا كان المستخدم استخدم الكود مسبقاً
+        # 3. التحقق مما إذا كان العميل قد استخدمه مسبقاً
         used = cursor.execute("SELECT * FROM used_codes WHERE telegram_id = ? AND UPPER(code) = ?", (telegram_id, code_text)).fetchone()
         if used:
             conn.close()
-            return jsonify({'status': 'error', 'error': 'لقد قمت بتفعيل هذا الكود ومنح رصيدك منه سابقاً'}), 400
+            return jsonify({'status': 'error', 'error': 'الكود مستخدم'}), 400
 
-        # 4. تفعيل الكود وخصمه وإضافة الرصيد
+        # 4. تفعيل الكود وخصمه وإضافة الرصيد لمحفظة البوت
         real_code = code_obj['code']
         new_used_count = used_count + 1
-        is_active = 0 if new_used_count >= max_uses else 1
+        is_active_flag = 0 if new_used_count >= max_uses else 1
 
         cursor.execute("INSERT INTO used_codes (telegram_id, code) VALUES (?, ?)", (telegram_id, real_code))
-        cursor.execute("UPDATE gift_codes SET used_count = ?, active = ? WHERE code = ?", (new_used_count, is_active, real_code))
+        cursor.execute("UPDATE gift_codes SET used_count = ?, active = ?, is_active = ? WHERE code = ?", (new_used_count, is_active_flag, is_active_flag, real_code))
         
-        cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", 
-                       (amount, telegram_id, str(telegram_id)))
+        cursor.execute("""
+            UPDATE users 
+            SET bot_balance = COALESCE(bot_balance, 0.0) + ?, balance = COALESCE(balance, 0.0) + ? 
+            WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?
+        """, (amount, amount, telegram_id, str(telegram_id)))
         
+        cursor.execute("""
+            INSERT INTO transactions (telegram_id, type, method, amount, tx_number, status)
+            VALUES (?, 'gift_code', 'كود هدية', ?, ?, 'approved')
+        """, (telegram_id, amount, real_code))
+
         conn.commit()
         
         user_info = cursor.execute("SELECT telegram_id, site_username, username, bot_balance, site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
@@ -978,7 +1027,7 @@ def use_code():
 
         return jsonify({
             'status': 'success',
-            'message': f'تم تفعيل الكود بنجاح وإضافة {amount} إلى رصيد البوت الخاص بك',
+            'message': 'تم تفعيل واضافة الرصيد الى محفظة البوت',
             'user': {
                 'telegram_id': telegram_id,
                 'username': user_name_str,
@@ -999,10 +1048,24 @@ def use_code():
 
 @app.route('/api/admin/codes/list', methods=['GET'])
 def admin_list_codes():
+    """عرض كافة الأكواد"""
     conn = get_db_connection()
     codes = conn.execute("""
-        SELECT code, amount, max_uses, used_count, active, bot_id, created_at 
+        SELECT code, amount, max_uses, used_count, active, is_active, bot_id, created_at 
         FROM gift_codes 
+        ORDER BY created_at DESC
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(c) for c in codes])
+
+@app.route('/api/admin/codes/active', methods=['GET'])
+def admin_list_active_codes():
+    """عرض الأكواد النشطة فقط في لوحة الإدارة"""
+    conn = get_db_connection()
+    codes = conn.execute("""
+        SELECT code, amount, max_uses, used_count, active, is_active, bot_id, created_at 
+        FROM gift_codes 
+        WHERE (active = 1 OR is_active = 1) AND used_count < max_uses
         ORDER BY created_at DESC
     """).fetchall()
     conn.close()
@@ -1011,6 +1074,12 @@ def admin_list_codes():
 @app.route('/api/code/deactivate', methods=['POST'])
 @app.route('/api/admin/code/deactivate', methods=['POST'])
 def admin_deactivate_code():
+    """
+    إلغاء تفعيل الكود:
+    - يطلب اسم الكود
+    - يستجيب ويلغي الكود
+    - يعيد قيمة الاستخدامات المتبقية غير المستهلكة فوراً إلى الكاشيرة
+    """
     data = get_req_data()
     code_text = str(data.get('code', '')).strip().upper()
 
@@ -1025,7 +1094,8 @@ def admin_deactivate_code():
         conn.close()
         return jsonify({'status': 'error', 'error': 'الكود غير موجود'}), 404
 
-    if code_obj['active'] == 0:
+    active = code_obj['active'] if code_obj['active'] is not None else code_obj['is_active']
+    if active == 0:
         conn.close()
         return jsonify({'status': 'error', 'error': 'الكود ملغى بالفعل'}), 400
 
@@ -1037,8 +1107,10 @@ def admin_deactivate_code():
     refund_amount = remaining_uses * amount
     bot_id = code_obj['bot_id'] or 1
 
-    cursor.execute("UPDATE gift_codes SET active = 0 WHERE UPPER(code) = ?", (code_text,))
+    # إلغاء تفعيل الكود
+    cursor.execute("UPDATE gift_codes SET active = 0, is_active = 0 WHERE UPPER(code) = ?", (code_text,))
     
+    # إعادة الرصيد المتبقي للكاشيرة
     if refund_amount > 0:
         update_bot_cashier(cursor, refund_amount, bot_id)
 
@@ -1047,7 +1119,7 @@ def admin_deactivate_code():
 
     return jsonify({
         'status': 'success',
-        'message': f'تم إلغاء الكود {code_text} بنجاح وإعادة {refund_amount}$ غير مستخدمة إلى كاشيرة البوت'
+        'message': f'تم إلغاء الكود {code_text} بنجاح وإعادة {refund_amount}$ إلى كاشيرة البوت'
     })
 
 # ==================== لوحة التحكم والطلب وإدارة الكاشيرة ====================
