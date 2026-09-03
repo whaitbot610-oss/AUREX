@@ -768,12 +768,12 @@ def list_games_in_folder():
 @app.route('/api/game/start', methods=['POST'])
 def start_game_round():
     """
-    بدء اللعب في أي لعبة:
-    - يقرأ رصيد الموقع (المستقل تماماً عن البوت).
-    - يخصم الرهان فوراً من رصيد الموقع عند اللعب.
-    - يضيف الرهان إلى الكاشيرة فوراً.
-    - يتحكم بالخوارزمية بناء على نسبة RTP في الإعدادات.
-    - عند الربح: لا يضاف الربح لرصيد الموقع ولا يخصم من الكاشيرة إلا عند انتهاء دوران اللعبة عبر /api/game/finish.
+    بدء اللعب في أي لعبة بالموقع (aurex):
+    - يستجيب لرصيد الموقع حصراً والمستقل تماماً عن البوت والكاشيرة.
+    - يخصم الرهان فوراً من رصيد الموقع (site_balance).
+    - لا يخصم ولا يضيف أي شيء إلى الكاشيرة مطلقاً.
+    - يتحكم بالخوارزمية بناءً على نسبة RTP المحددة في الإعدادات.
+    - عند الفوز: يضاف الربح لرصيد الموقع عند توقف اللعبة/الأنيميشن.
     """
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
@@ -797,48 +797,33 @@ def start_game_round():
         conn.close()
         return jsonify({'status': 'error', 'error': 'رصيد الموقع غير كافٍ للرهان'}), 400
 
-    bot_id = user['bot_id'] or 1
-
-    # 1. الخصم الفوري للرهان من رصيد الموقع الخاص بالمستخدم
+    # 1. الخصم الفوري للرهان من رصيد الموقع (مستقل تماماً ولا يمس الكاشيرة)
     new_site_balance = (user['site_balance'] or 0.0) - bet
     cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (new_site_balance, telegram_id, str(telegram_id)))
-    
-    # 2. إضافة الرهان مباشرة للكاشيرة
-    update_bot_cashier(cursor, +bet, bot_id)
 
-    # 3. التحكم الحقيقي في الخوارزمية حسب نسبة RTP
+    # 2. التحكم الحقيقي في الخوارزمية حسب نسبة RTP من لوحة التحكم
     try:
         rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
     except Exception:
         rtp_rate = 30.0
 
     win = (random.uniform(0, 100)) <= rtp_rate
-    cashier = get_bot_cashier(cursor, bot_id)
-
     multiplier = float(data.get('multiplier', 2.0))
     payout = bet * multiplier if win else 0.0
 
-    # حماية الكاشيرة: إذا لم تكن تفي بالربح يتم إلغاء الفوز
-    if win and (payout - bet) > cashier:
-        win = False
-        payout = 0.0
-
-    # 4. تسجيل الجولة (معلقة الحين الانتهاء من دوران اللعبة)
+    # 3. تسجيل الجولة (معلقة لحين توقف الدوران في اللعبة)
     cursor.execute("""
         INSERT INTO game_rounds (telegram_id, game_name, bet_amount, payout, status)
         VALUES (?, ?, ?, ?, 'pending')
     """, (telegram_id, game_name, bet, payout if win else 0.0))
     round_id = cursor.lastrowid
 
-    # إذا كانت طلبات سابقة فورية لا تطلب مرحلتين (تنهي تلقائياً عند الطلب)
     is_instant = data.get('instant', False)
-
     conn.commit()
 
     if is_instant:
         if win and payout > 0:
             cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (payout, telegram_id, str(telegram_id)))
-            update_bot_cashier(cursor, -payout, bot_id)
             new_site_balance += payout
         cursor.execute("UPDATE game_rounds SET status = 'completed' WHERE id = ?", (round_id,))
         conn.commit()
@@ -861,15 +846,15 @@ def start_game_round():
         'payout': payout,
         'site_balance_after_bet': new_site_balance,
         'new_balance': new_site_balance,
-        'message': 'تم بدء الدوران وحساب النتيجة، يرجى استدعاء /api/game/finish عند انتهاء الأنيميشن'
+        'message': 'تم بدء الدوران وحساب النتيجة تلقائياً، استدعِ /api/game/finish عند توقف اللعبة لترصيد الفوز'
     })
 
 @app.route('/api/game/finish', methods=['POST'])
 @app.route('/api/game/claim', methods=['POST'])
 def finish_game_round():
     """
-    عند إنهاء دوران اللعبة:
-    يُصرف الربح لرصيد الموقع ويُخصم من الكاشيرة فقط بعد اكتمال الدوران.
+    عند إنهاء دوران/توقف أي لعبة في الموقع:
+    يتم إضافة الربح المستحق لرصيد الموقع حصراً وبشكل تلقائي بناء على نتائج الخوارزمية.
     """
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
@@ -891,13 +876,10 @@ def finish_game_round():
         return jsonify({'status': 'error', 'error': 'لا توجد جولة معلقة برسم الانتهاء'}), 404
 
     payout = float(round_obj['payout'])
-    user = cursor.execute("SELECT bot_id, site_balance FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (telegram_id, str(telegram_id))).fetchone()
-    bot_id = user['bot_id'] if user else 1
 
     if payout > 0:
-        # إضافة الربح للمستخدم بعد انتهاء الدوران وخصمه من الكاشيرة
+        # إضافة الربح لرصيد الموقع فقط (دون المساس بالكاشيرة)
         cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (payout, telegram_id, str(telegram_id)))
-        update_bot_cashier(cursor, -payout, bot_id)
 
     cursor.execute("UPDATE game_rounds SET status = 'completed' WHERE id = ?", (round_obj['id'],))
     conn.commit()
@@ -916,11 +898,11 @@ def finish_game_round():
 @app.route('/api/wheel/spin', methods=['POST'])
 def wheel_spin():
     """
-    عجلة الحظ:
-    - عند اللعب من رصيد البوت: يخصم سعر اللفة من البوت ويضاف إلى الكاشيرة.
-    - عند اللعب باللفات المجانية: لا يضاف رصيد إلى الكاشيرة.
-    - عند الربح في العجلة: يُخصم الربح فوراً من الكاشيرة ويضاف للبوت.
-    - تفعيل التحكم الحقيقي في الخوارزمية حسب الاحتمالات المحددة.
+    عجلة الحظ (المرتبطة بنظام الكاشيرة والبوت):
+    - عند اللعب من رصيد البوت: يخصم سعر اللفة من محفظة البوت ويضاف إلى الكاشيرة.
+    - عند اللعب باللفة المجانية: لا يضاف رصيد اللعب إلى الكاشيرة.
+    - عند الربح في العجلة: يخصم رصيد الجائزة من الكاشيرة ويضاف إلى محفظة البوت للرابح.
+    - تفعيل التحكم الحقيقي في خوارزميات العجلة داخل البوت ولوحة التحكم.
     """
     user_id = get_authenticated_user_id()
     if not user_id:
@@ -945,12 +927,12 @@ def wheel_spin():
     spin_cost = 10.0
     bot_id = user['bot_id'] or 1
 
-    # 1. عند اللعب بلفة مجانية لا يضاف رصيد إلى الكاشيرة
+    # 1. حالة اللفة المجانية: لا يضاف أي رصيد إلى الكاشيرة
     if current_free_spins > 0:
         is_free_spin = True
         cursor.execute("UPDATE users SET free_spins = MAX(0, COALESCE(free_spins, 0) - 1) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id)))
     else:
-        # 2. عند اللعب من الرصيد يضاف سعر اللفة إلى الكاشيرة
+        # 2. حالة اللعب من الرصيد: يخصم من البوت ويضاف إلى الكاشيرة
         if current_bot_balance >= spin_cost:
             cursor.execute("UPDATE users SET bot_balance = MAX(0.0, COALESCE(bot_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (spin_cost, user_id, str(user_id)))
             update_bot_cashier(cursor, +spin_cost, bot_id)
@@ -958,7 +940,7 @@ def wheel_spin():
             conn.close()
             return jsonify({'status': 'error', 'error': 'ليس لديك لفات مجانية في البوت أو رصيد بوت كافٍ لتدوير العجلة'}), 400
 
-    # 3. التحكم الحقيقي في خوارزمية العجلة من الإعدادات
+    # 3. التحكم الحقيقي والفعلي في خوارزميات العجلة بحسب النسب المحددة
     probs_str = get_setting(cursor, 'wheel_probabilities', '{}')
     try:
         probs = json.loads(probs_str)
@@ -971,12 +953,13 @@ def wheel_spin():
     chosen_reward = random.choices(numbers, weights=weights, k=1)[0]
 
     cashier_before = get_bot_cashier(cursor, bot_id)
+    # حماية الكاشيرة من السحب السلبي
     if chosen_reward > cashier_before:
         chosen_reward = 0
 
     msg = "حظ أوفر، لم تكسب شيئاً" if chosen_reward == 0 else f"مبروك! لقد كسبت {chosen_reward} NSP تم إضافتها لرصيد البوت"
 
-    # 4. عند الربح يخصم رصيد الجائزة من الكاشيرة
+    # 4. عند الربح: يخصم الجائزة من الكاشيرة ويضيفها إلى محفظة البوت للعميل
     if chosen_reward > 0:
         cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (chosen_reward, user_id, str(user_id)))
         cashier_before, cashier_after = update_bot_cashier(cursor, -chosen_reward, bot_id)
@@ -1425,9 +1408,9 @@ def create_transaction_request():
         conn.close()
         return jsonify({'status': 'error', 'error': 'المستخدم غير موجود'}), 404
 
-    if tx_type == 'withdraw' and (user['site_balance'] or 0.0) < amount:
+    if tx_type == 'withdraw' and (user['bot_balance'] or 0.0) < amount:
         conn.close()
-        return jsonify({'status': 'error', 'error': 'رصيد الموقع غير كافٍ لطلب السحب'}), 400
+        return jsonify({'status': 'error', 'error': 'رصيد محفظة البوت غير كافٍ لطلب السحب'}), 400
 
     cursor.execute('''
         INSERT INTO transactions (telegram_id, bot_id, type, method, amount, tx_number, status)
@@ -1442,9 +1425,9 @@ def create_transaction_request():
 @app.route('/api/admin/transactions/process', methods=['POST'])
 def process_transaction():
     """
-    معالجة طلبات الإيداع والسحب:
-    - الشحن (deposit): يخصم من الكاشيرة ويضاف إلى رصيد العميل.
-    - السحب (withdraw): يخصم من رصيد العميل ويضاف إلى الكاشيرة.
+    معالجة طلبات الإيداع والسحب المقترنة بالكاشيرة ومحفظة البوت:
+    - الشحن (deposit): يخصم من الكاشيرة ويضاف إلى محفظة العميل في البوت (bot_balance).
+    - السحب (withdraw): يخصم من محفظة العميل في البوت (bot_balance) ويضاف إلى الكاشيرة.
     """
     data = get_req_data()
     try:
@@ -1468,12 +1451,12 @@ def process_transaction():
 
     if action == 'approve':
         if tx['type'] == 'deposit':
-            # طلب شحن وتمت الموافقة: يخصم من الكاشيرة ويضاف إلى العميل
-            cursor.execute("UPDATE users SET site_balance = COALESCE(site_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
+            # طلب شحن وتمت الموافقة: يخصم من الكاشيرة ويضاف إلى محفظة البوت للعميل
+            cursor.execute("UPDATE users SET bot_balance = COALESCE(bot_balance, 0.0) + ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
             update_bot_cashier(cursor, -tx['amount'], bot_id)
         elif tx['type'] == 'withdraw':
-            # طلب سحب وتمت الموافقة: يخصم من العميل ويضاف إلى الكاشيرة
-            cursor.execute("UPDATE users SET site_balance = MAX(0, COALESCE(site_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
+            # طلب سحب وتمت الموافقة: يخصم من محفظة البوت للعميل ويضاف إلى الكاشيرة
+            cursor.execute("UPDATE users SET bot_balance = MAX(0, COALESCE(bot_balance, 0.0) - ?) WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (tx['amount'], tx['telegram_id'], str(tx['telegram_id'])))
             update_bot_cashier(cursor, +tx['amount'], bot_id)
 
     cursor.execute("UPDATE transactions SET status = ? WHERE id = ?", (action, tx_id))
