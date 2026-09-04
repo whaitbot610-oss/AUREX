@@ -17,13 +17,7 @@
         }
 
         body {
-            /* خلفية الصورة المطلوبة مع الحفاظ على الألوان العميقة الأصلية */
             background-color: #0c0102;
-            background-image: radial-gradient(circle at center, rgba(44, 3, 6, 0.4) 0%, rgba(0, 0, 0, 0.8) 100%), url('https://i.ibb.co/TDh3Gvgp/image.png');
-            background-repeat: no-repeat;
-            background-position: center center;
-            background-size: cover;
-            background-attachment: fixed;
             color: #ffffff;
             text-align: center;
             display: flex;
@@ -31,32 +25,37 @@
             align-items: center;
             justify-content: space-between;
             min-height: 100vh;
-            padding: 20px 15px;
+            padding: 15px;
             overflow-x: hidden;
             position: relative;
         }
 
-        /* احتياطي لضمان ظهور الخلفية المطلوبة مهما كان الرابط المستعرض */
-        body::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: url('https://ibb.co/TDh3Gvgp') center center / cover no-repeat;
-            opacity: 0;
-            pointer-events: none;
-            z-index: -1;
+        /* طبقة خلفية الصورة المباشرة لضمان ظهورها عبر كافة المتصفحات والتليجرام */
+        .bg-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: radial-gradient(circle at center, rgba(44, 3, 6, 0.3) 0%, rgba(0, 0, 0, 0.75) 100%), 
+                              url('https://i.ibb.co/TDh3Gvgp/image.png'), 
+                              url('https://i.ibb.co/TDh3Gvgp/image.jpg');
+            background-position: center center;
+            background-repeat: no-repeat;
+            background-size: cover;
+            z-index: -2;
         }
 
-        /* توهج محيطي حديث خلف العجلة */
+        /* توهج محيطي خفيف خلف العجلة */
         .ambient-light {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 380px;
-            height: 380px;
+            width: 360px;
+            height: 360px;
             background: radial-gradient(circle, rgba(229, 9, 20, 0.35) 0%, rgba(212, 175, 55, 0.2) 55%, transparent 75%);
-            z-index: 0;
+            z-index: -1;
             pointer-events: none;
             animation: ambientGlow 3s infinite alternate ease-in-out;
             border-radius: 50%;
@@ -64,10 +63,10 @@
 
         @keyframes ambientGlow {
             0% { transform: translate(-50%, -50%) scale(0.92); opacity: 0.6; }
-            100% { transform: translate(-50%, -50%) scale(1.12); opacity: 0.95; }
+            100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.95; }
         }
 
-        /* مساحة العجلة لتتوسط الشاشة تماماً تحت عنوان الصورة */
+        /* حاوية العجلة لتتوسط الشاشة تحت عنوان الصورة */
         .main-container {
             flex: 1;
             display: flex;
@@ -76,26 +75,26 @@
             justify-content: center;
             width: 100%;
             z-index: 1;
-            margin-top: 40px;
+            margin-top: 35px;
         }
 
         /* إطار العجلة الخارجي الفاخر بالتصميم الحديث */
         .wheel-outer-wrapper {
             position: relative;
-            width: 350px;
-            height: 350px;
+            width: 340px;
+            height: 340px;
             margin: 0 auto;
             border-radius: 50%;
             padding: 12px;
             background: radial-gradient(circle, #4a0105 0%, #170002 85%, #080001 100%);
-            border: 3px solid rgba(212, 175, 55, 0.8);
+            border: 3px solid rgba(212, 175, 55, 0.85);
             box-shadow: 0 0 35px rgba(229, 9, 20, 0.7), inset 0 0 25px rgba(0,0,0,0.95), 0 0 20px rgba(212, 175, 55, 0.6);
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        /* نظام الإنارة الحديث (Modern Dynamic Halo Ring) بدلاً من اللمبات التقليدية */
+        /* حلقة إنارة حديثة بدلاً من اللمبات التقليدية */
         .modern-lighting-ring {
             position: absolute;
             inset: -6px;
@@ -115,7 +114,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* حلقة شرائح الإنارة المتطورة */
         .light-segments {
             position: absolute;
             width: 100%;
@@ -128,43 +126,43 @@
 
         .light-node {
             position: absolute;
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
             top: 50%;
             left: 50%;
-            margin: -4px;
+            margin: -3.5px;
             background: #fff7d6;
-            box-shadow: 0 0 12px #ffe600, 0 0 20px #e50914;
+            box-shadow: 0 0 10px #ffe600, 0 0 18px #e50914;
             transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
         }
 
         .wheel-container {
             position: relative;
-            width: 310px;
-            height: 310px;
+            width: 300px;
+            height: 300px;
             border-radius: 50%;
             box-shadow: 0 0 20px rgba(0,0,0,0.95);
         }
 
         #canvas {
-            width: 310px;
-            height: 310px;
+            width: 300px;
+            height: 300px;
             border-radius: 50%;
             display: block;
         }
 
-        /* السهم / المؤشر الذهبي المطور */
+        /* السهم الذهبي المطور */
         .pointer {
             position: absolute;
-            top: -20px;
+            top: -18px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 18px solid transparent;
-            border-right: 18px solid transparent;
-            border-top: 38px solid #ffe600;
+            border-left: 17px solid transparent;
+            border-right: 17px solid transparent;
+            border-top: 36px solid #ffe600;
             z-index: 10;
             filter: drop-shadow(0 6px 10px rgba(0,0,0,0.95));
         }
@@ -172,42 +170,42 @@
         .pointer::before {
             content: '';
             position: absolute;
-            top: -40px;
-            left: -12px;
+            top: -38px;
+            left: -11px;
             width: 0;
             height: 0;
-            border-left: 12px solid transparent;
-            border-right: 12px solid transparent;
-            border-top: 28px solid #d4af37;
+            border-left: 11px solid transparent;
+            border-right: 11px solid transparent;
+            border-top: 26px solid #d4af37;
         }
 
         .pointer::after {
             content: '';
             position: absolute;
-            top: -44px;
-            left: -8px;
-            width: 16px;
-            height: 16px;
+            top: -42px;
+            left: -7px;
+            width: 14px;
+            height: 14px;
             background: radial-gradient(circle, #ffffff 0%, #e50914 100%);
             border-radius: 50%;
             border: 2px solid #fff;
             box-shadow: 0 0 12px #e50914;
         }
 
-        /* زر الدوران العصري الفاخر */
+        /* زر الدوران */
         .center-btn {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 74px;
-            height: 74px;
+            width: 70px;
+            height: 70px;
             background: radial-gradient(circle at 35% 35%, #ff2a35 0%, #8b0005 70%, #3d0002 100%);
             border: 4px solid #f2d06b;
             border-radius: 50%;
             color: #ffffff;
             font-weight: 900;
-            font-size: 18px;
+            font-size: 17px;
             letter-spacing: 1px;
             cursor: pointer;
             z-index: 5;
@@ -234,14 +232,14 @@
             filter: grayscale(0.6);
         }
 
-        /* كارت المعلومات المطور */
+        /* كارت المعلومات */
         .info-card {
             background: rgba(18, 4, 7, 0.82);
             border: 1px solid rgba(212, 175, 55, 0.5);
             border-radius: 22px;
             padding: 12px 22px;
             width: 100%;
-            max-width: 340px;
+            max-width: 330px;
             margin-top: 18px;
             display: flex;
             justify-content: space-around;
@@ -265,13 +263,13 @@
         }
 
         .info-item span.val {
-            font-size: 19px;
+            font-size: 18px;
             font-weight: 900;
             color: #ffd700;
             text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
         }
 
-        /* عرض نتائج الفوز والخسارة */
+        /* نتائج الفوز والخسارة */
         #result-modal {
             margin-top: 14px;
             font-size: 18px;
@@ -299,7 +297,7 @@
             to { transform: scale(1.08); }
         }
 
-        /* كانفاس تطاير عملات L السريعة والاحتفالات */
+        /* كانفاس تطاير عملات L */
         #fxCanvas {
             position: fixed;
             top: 0;
@@ -313,27 +311,24 @@
 </head>
 <body>
 
+    <div class="bg-layer"></div>
     <div class="ambient-light"></div>
     <canvas id="fxCanvas"></canvas>
 
-    <!-- تم إزالة الاسم والترويسة العلوية حسب الطلب لتبقى الصورة العلوية هي الظاهرة -->
-
     <div class="main-container">
-        <!-- الإطار الخارجي للعجلة مع نظام الإنارة الحديث -->
         <div class="wheel-outer-wrapper">
             <div class="modern-lighting-ring" id="lightingRing"></div>
             <div class="light-segments" id="lightSegments"></div>
             
             <div class="wheel-container">
                 <div class="pointer"></div>
-                <canvas id="canvas" width="310" height="310"></canvas>
+                <canvas id="canvas" width="300" height="300"></canvas>
                 <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
             </div>
         </div>
 
         <div id="result-modal"></div>
 
-        <!-- كارت المعلومات (الحفاظ على قواعد البيانات والمعرفات) -->
         <div class="info-card">
             <div class="info-item">
                 <span class="label">🎲 اللفات المتاحة</span>
@@ -358,7 +353,7 @@
         }
         if (userId === "null" || userId === "undefined") userId = null;
 
-        // الحفاظ الكامل على مصفوفة القيم كما هي بجميع قواعدها البيانات
+        // قواعد البيانات والمصفوفات دون تغيير
         const values = [0, 5, 10, 15, 25, 50, 100, 500, 10000];
         const numSlices = values.length;
         const canvas = document.getElementById("canvas");
@@ -366,14 +361,14 @@
         let currentAngle = 0;
         let isSpinning = false;
 
-        // --- نظام الإنارة الحديث والافتراضي المتطور (Modern Light Ring) ---
+        // --- نظام الإنارة الحديث ---
         const lightSegments = document.getElementById("lightSegments");
         const totalNodes = 20;
         const nodeElements = [];
 
         function createModernLighting() {
-            const radius = 166;
-            const center = 175;
+            const radius = 160;
+            const center = 170;
             for (let i = 0; i < totalNodes; i++) {
                 const angle = (i * (2 * Math.PI / totalNodes));
                 const x = center + radius * Math.cos(angle);
@@ -390,8 +385,7 @@
         createModernLighting();
 
         let lightStep = 0;
-        let lightSpeed = 250;
-        let lightInterval = setInterval(animateLighting, lightSpeed);
+        let lightInterval = setInterval(animateLighting, 250);
 
         function animateLighting() {
             lightStep++;
@@ -403,13 +397,13 @@
                     node.style.transform = active ? "scale(1.4)" : "scale(0.8)";
                 } else {
                     node.style.background = active ? "#fff7d6" : "rgba(212, 175, 55, 0.3)";
-                    node.style.boxShadow = active ? "0 0 12px #ffe600" : "none";
+                    node.style.boxShadow = active ? "0 0 10px #ffe600" : "none";
                     node.style.transform = active ? "scale(1.1)" : "scale(0.9)";
                 }
             });
         }
 
-        // --- رسم العجلة بنفس الألوان الأصلية مع تطوير اللمعان والمظهر ---
+        // --- رسم العجلة بنفس الألوان الأصلية ---
         function drawWheel() {
             const radius = canvas.width / 2;
             const sliceAngle = (2 * Math.PI) / numSlices;
@@ -448,21 +442,21 @@
 
                 if (values[i] === 10000 || values[i] === 500) {
                     ctx.fillStyle = "#ffe600";
-                    ctx.font = "900 14px Cairo, Arial";
+                    ctx.font = "900 13px Cairo, Arial";
                     ctx.shadowColor = "rgba(255, 230, 0, 0.9)";
                     ctx.shadowBlur = 10;
                 } else {
                     ctx.fillStyle = "#ffffff";
-                    ctx.font = "bold 13px Cairo, Arial";
+                    ctx.font = "bold 12px Cairo, Arial";
                     ctx.shadowBlur = 0;
                 }
 
-                ctx.fillText(values[i] + " NSP", radius - 18, 5);
+                ctx.fillText(values[i] + " NSP", radius - 16, 4);
                 ctx.restore();
             }
 
             ctx.beginPath();
-            ctx.arc(radius, radius, 40, 0, 2 * Math.PI);
+            ctx.arc(radius, radius, 38, 0, 2 * Math.PI);
             ctx.fillStyle = "#110203";
             ctx.fill();
             ctx.strokeStyle = "#d4af37";
@@ -470,7 +464,7 @@
             ctx.stroke();
         }
 
-        // --- جلب بيانات المستخدم دون أي تعديل في المسارات ---
+        // --- جلب البيانات ---
         async function fetchUserData() {
             if (!userId) {
                 document.getElementById("result-modal").innerText = "⚠️ افتح العجلة عبر البوت مباشرة.";
@@ -489,25 +483,18 @@
             }
         }
 
-        // --- عملية الدوران واستقبال أوامر التحكم بالخوارزمية ---
+        // --- عملية الدوران ---
         async function startSpin() {
             if (isSpinning || !userId) return;
             isSpinning = true;
             document.getElementById("spinBtn").disabled = true;
             document.getElementById("result-modal").innerText = "";
 
-            // التسريع الديناميكي للإضاءة أثناء الدوران
             clearInterval(lightInterval);
             lightInterval = setInterval(animateLighting, 70);
             document.getElementById("lightingRing").style.animationDuration = "1s";
 
-            // تجميع وتجهيز أوامر التحكم بالخوارزمية الممررة عبر الرابط
-            const payload = { 
-                telegram_id: userId, 
-                user_id: userId 
-            };
-
-            // إرسال جميع أوامر التحكم بالخوارزمية إن وجدت بالـ URL إلى السيرفر
+            const payload = { telegram_id: userId, user_id: userId };
             for (const [key, val] of urlParams.entries()) {
                 payload[key] = val;
             }
@@ -570,7 +557,7 @@
 
                         if (data.reward > 0) {
                             document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
-                            triggerGoldenLCoins(); // إطلاق عملات L الذهبية المتطايرة بسرعة وسلاسة
+                            triggerGoldenLCoins();
                         } else {
                             document.getElementById("result-modal").innerHTML = `<span class="lose-msg">💔 حظ أوفر في المرة القادمة!</span>`;
                         }
@@ -588,7 +575,7 @@
             }
         }
 
-        // --- تأثير تطاير عملات L الذهبية المعدنية بسرعة وسلاسة متطورة ---
+        // --- تأثير عملات L الصغيرة والسريعة جداً (تختفي خلال 1.5 - 2 ثانية) ---
         const fxCanvas = document.getElementById("fxCanvas");
         const fxCtx = fxCanvas.getContext("2d");
         let coins = [];
@@ -602,23 +589,23 @@
 
         function triggerGoldenLCoins() {
             coins = [];
-            const count = 90; // عدد عملات ممتاز وسريع
+            const count = 65;
             const startX = fxCanvas.width / 2;
             const startY = fxCanvas.height / 2;
 
             for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 18 + 8; // انطلاق سريع وسلس
+                const speed = Math.random() * 22 + 12; // انطلاق سريع وحاد
                 coins.push({
                     x: startX,
                     y: startY,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed - 6,
-                    radius: Math.random() * 12 + 12,
+                    radius: Math.random() * 4 + 5, // حجم صغير وأنيق (من 5 إلى 9 بكسل)
                     rotationX: Math.random() * Math.PI,
-                    rotSpeed: Math.random() * 0.25 + 0.15, // دوران 3D سريع
+                    rotSpeed: Math.random() * 0.4 + 0.25, // دوران سريع ثلاثي الأبعاد
                     alpha: 1,
-                    gravity: 0.45
+                    gravity: 0.65 // نزول واختفاء سريع
                 });
             }
             requestAnimationFrame(updateCoins);
@@ -629,11 +616,9 @@
             fxCtx.globalAlpha = c.alpha;
             fxCtx.translate(c.x, c.y);
             
-            // محاكاة دوران العملة ثلاثي الأبعاد مقياس X
             const scaleX = Math.cos(c.rotationX);
             fxCtx.scale(scaleX, 1);
 
-            // جسم العملة الذهبية المعدنية
             fxCtx.beginPath();
             fxCtx.arc(0, 0, c.radius, 0, Math.PI * 2);
             let grad = fxCtx.createRadialGradient(0, 0, c.radius * 0.2, 0, 0, c.radius);
@@ -643,20 +628,16 @@
             fxCtx.fillStyle = grad;
             fxCtx.fill();
 
-            // إطار العملة
-            fxCtx.lineWidth = 2;
+            fxCtx.lineWidth = 1.5;
             fxCtx.strokeStyle = '#fff7d6';
             fxCtx.stroke();
 
-            // طباعة حرف L كبير وواضح بالوسط
-            if (Math.abs(scaleX) > 0.18) {
-                fxCtx.fillStyle = '#4a2c00';
-                fxCtx.font = `900 ${c.radius * 1.2}px Cairo, Arial`;
+            if (Math.abs(scaleX) > 0.2) {
+                fxCtx.fillStyle = '#3d2400';
+                fxCtx.font = `900 ${c.radius * 1.25}px Cairo, Arial`;
                 fxCtx.textAlign = 'center';
                 fxCtx.textBaseline = 'middle';
-                fxCtx.shadowColor = '#fff';
-                fxCtx.shadowBlur = 2;
-                fxCtx.fillText('L', 0, 1);
+                fxCtx.fillText('L', 0, 0.5);
             }
 
             fxCtx.restore();
@@ -671,9 +652,9 @@
                 c.x += c.vx;
                 c.y += c.vy;
                 c.vy += c.gravity;
-                c.vx *= 0.98;
+                c.vx *= 0.95;
                 c.rotationX += c.rotSpeed;
-                c.alpha -= 0.012; // تلاشي تدريجي وسلس
+                c.alpha -= 0.022; // اختفاء كامل وتلاشي سريع خلال أقل من ثانيتين
 
                 if (c.alpha > 0) {
                     activeCount++;
