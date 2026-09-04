@@ -38,7 +38,7 @@
             width: 100vw;
             height: 100vh;
             background-image: url('https://i.ibb.co/7xymDY18/file-000000000aec820a8bee37b8689ee9e4.png');
-            background-position: top center;
+            background-position: center 10px; /* تم رفع محاذاة الصورة لضبط العرض */
             background-repeat: no-repeat;
             background-size: cover;
             z-index: -2;
@@ -47,7 +47,7 @@
         /* توهج خلف العجلة */
         .ambient-light {
             position: absolute;
-            top: 55%;
+            top: 58%;
             left: 50%;
             transform: translate(-50%, -50%);
             width: 340px;
@@ -64,11 +64,11 @@
             100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.95; }
         }
 
-        /* مساحة علوية مخصصة حتى يظهر الاسم المطبوع بداخل الصورة بوضوح */
+        /* زيادة المسافة العلوية لتهبط العجلة وتظهر كلمة AUREX كاملة بالعلى دون أن يغطيها السهم */
         .header-spacer {
             width: 100%;
-            height: 18vh;
-            min-height: 80px;
+            height: 25vh; /* تم رفع المسافة من 18vh إلى 25vh */
+            min-height: 120px;
         }
 
         /* حاوية العجلة المتركزة في المنتصف */
@@ -659,7 +659,7 @@
                 c.vy += c.gravity;
                 c.vx *= 0.92;
                 c.rotationX += c.rotSpeed;
-                c.alpha -= 0.035; // معدل اختفاء سريع ليتم التأثير كاملاً في ثانية واحدة
+                c.alpha -= 0.035;
 
                 if (c.alpha > 0) {
                     activeCount++;
