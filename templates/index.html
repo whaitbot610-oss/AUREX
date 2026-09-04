@@ -7,242 +7,355 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg-main: #07090e;
-            --bg-card: #121620;
-            --bg-input: #1a202c;
-            --primary-red: #dc2626;
-            --primary-red-glow: rgba(220, 38, 38, 0.4);
             --accent-gold: #f59e0b;
-            --accent-green: #10b981;
+            --accent-gold-bright: #ffd700;
+            --primary-red: #dc2626;
+            --bg-card: rgba(18, 22, 32, 0.92);
+            --bg-input: #1a202c;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --border: #262f40;
+            --border: #3b2a1a;
+            --gold-border: linear-gradient(135deg, #bf953f, #fcf6ba, #b38728, #fbf5b7, #aa771c);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; user-select: none; }
-        body { background-color: var(--bg-main); color: var(--text-main); padding-bottom: 90px; }
-
-        /* Top Header */
-        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; background: #0d1117; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        .logo { font-size: 1.5rem; font-weight: 900; color: #fff; letter-spacing: 2px; text-shadow: 0 0 12px var(--primary-red-glow); display: flex; align-items: center; gap: 6px; }
-        .logo span { color: var(--primary-red); }
-        .user-nav { display: flex; align-items: center; gap: 8px; }
-        .balance-group { display: flex; gap: 6px; }
-        .balance-badge { background: var(--bg-card); border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: bold; display: flex; align-items: center; gap: 4px; }
-        .balance-badge.site { color: var(--accent-gold); border-color: rgba(245, 158, 11, 0.3); }
-        .balance-badge.bot { color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
-        .btn-sm { background: var(--primary-red); border: none; color: white; padding: 7px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 8px var(--primary-red-glow); }
-        .btn-sm:hover { opacity: 0.9; transform: translateY(-1px); }
-
-        /* Main Container */
-        .container { max-width: 520px; margin: 15px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 16px; }
-
-        /* User Dashboard */
-        .user-card { background: linear-gradient(135deg, #181f2c, #0f131c); border-radius: 16px; padding: 18px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .user-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        .user-info h3 { font-size: 1.1rem; color: #fff; font-weight: 800; }
-        .user-info p { font-size: 0.8rem; color: var(--text-muted); }
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
-        .stat-box { background: rgba(0,0,0,0.3); padding: 10px 6px; border-radius: 10px; border: 1px solid var(--border); }
-        .stat-box .title { font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px; }
-        .stat-box .value { font-size: 0.95rem; font-weight: bold; color: var(--accent-gold); }
-
-        /* Action Cards */
-        .action-card { background: var(--bg-card); border-radius: 16px; padding: 18px; border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-        .action-card h4 { font-size: 0.95rem; margin-bottom: 12px; color: #fff; display: flex; align-items: center; gap: 6px; }
         
-        .flex-row { display: flex; gap: 8px; }
-        input[type="number"], input[type="text"], input[type="password"], select { padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-input); color: #fff; font-size: 0.9rem; width: 100%; outline: none; transition: 0.2s; }
-        input:focus, select:focus { border-color: var(--primary-red); box-shadow: 0 0 8px var(--primary-red-glow); }
+        body { 
+            background: url('https://i.ibb.co/V0ymNqTp/IMG.png') no-repeat center center fixed; 
+            background-size: cover; 
+            color: var(--text-main); 
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-x: hidden;
+        }
 
-        /* Buttons */
-        .btn-action { padding: 12px; background: linear-gradient(135deg, var(--primary-red), #991b1b); color: white; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s; }
-        .btn-action:hover { opacity: 0.95; }
-        .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-green { background: linear-gradient(135deg, var(--accent-green), #047857); }
-        .btn-gold { background: linear-gradient(135deg, var(--accent-gold), #d97706); color: #000; font-weight: 800; }
+        /* Top Bar matching image */
+        .top-bar { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 10px 14px; 
+            background: rgba(10, 8, 12, 0.85); 
+            backdrop-filter: blur(8px);
+            border-bottom: 2px solid #b38728; 
+            position: sticky; 
+            top: 0; 
+            z-index: 100; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8); 
+        }
 
-        /* Games Grid */
-        .games-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        .game-card { background: var(--bg-card); border-radius: 16px; padding: 20px; border: 1px solid var(--border); text-align: center; position: relative; overflow: hidden; }
-        .game-card.wheel-banner { background: linear-gradient(135deg, #2e1065, #0f172a); border-color: #7c3aed; }
-        
-        .slot-machine { display: flex; justify-content: center; gap: 10px; background: #090c12; padding: 18px; border-radius: 14px; margin: 15px 0; border: 1px solid var(--border); }
-        .reel { background: var(--bg-input); width: 70px; height: 80px; line-height: 80px; border-radius: 10px; font-size: 2.4rem; border: 1px solid var(--border); box-shadow: inset 0 0 10px rgba(0,0,0,0.8); }
+        .user-profile-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(20, 15, 10, 0.8);
+            border: 1px solid #bf953f;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+        .user-profile-badge .icon {
+            background: var(--accent-gold);
+            color: #000;
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        .username-text { font-size: 0.85rem; font-weight: bold; color: #fff; }
 
-        /* Status Text */
-        .status { margin-top: 10px; font-weight: bold; min-height: 22px; font-size: 0.9rem; }
-        .win { color: var(--accent-green); text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
-        .lose { color: var(--primary-red); }
+        .balances-container { display: flex; align-items: center; gap: 6px; }
+        .balance-box {
+            background: rgba(15, 10, 5, 0.9);
+            border: 1px solid #d4af37;
+            border-radius: 18px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #fff;
+        }
+        .balance-box .tag {
+            background: #bf953f;
+            color: #000;
+            font-size: 0.65rem;
+            padding: 1px 5px;
+            border-radius: 10px;
+            font-weight: 900;
+        }
 
-        /* Bottom Bar */
-        .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #0d1117; border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 12px 0; z-index: 100; }
-        .nav-item { display: flex; flex-direction: column; align-items: center; font-size: 0.75rem; color: var(--text-muted); cursor: pointer; }
-        .nav-item.active { color: var(--primary-red); font-weight: bold; }
-        .nav-item span { font-size: 1.3rem; margin-bottom: 2px; }
+        /* Center branding area spacer */
+        .main-hero {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
 
-        /* Modals */
-        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); backdrop-filter: blur(5px); z-index: 200; justify-content: center; align-items: center; padding: 16px; }
-        .modal-content { background: var(--bg-card); width: 100%; max-width: 500px; border-radius: 18px; padding: 22px; border: 1px solid var(--border); max-height: 88vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-weight: bold; border-bottom: 1px solid var(--border); padding-bottom: 10px; font-size: 1.1rem; color: #fff; }
+        /* Luxury Frame Buttons Container at Bottom */
+        .bottom-actions {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 15px 10px 25px 10px;
+            background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0));
+            gap: 8px;
+        }
+
+        .gold-frame-btn {
+            background: linear-gradient(180deg, #2b1f14 0%, #0d0805 100%);
+            border: 2px solid #d4af37;
+            border-radius: 14px;
+            padding: 10px 8px;
+            flex: 1;
+            max-width: 130px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.25), inset 0 0 8px rgba(212, 175, 55, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        .gold-frame-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.4);
+        }
+        .gold-frame-btn .btn-icon { font-size: 1.5rem; margin-bottom: 4px; }
+        .gold-frame-btn .btn-title { font-size: 0.78rem; font-weight: 800; color: #fff; text-shadow: 0 0 5px rgba(0,0,0,0.8); text-align: center; }
+        .gold-frame-btn .btn-sub { font-size: 0.6rem; color: var(--accent-gold); margin-top: 1px; text-align: center; }
+
+        /* Modal styling */
+        .modal { 
+            display: none; 
+            position: fixed; 
+            inset: 0; 
+            background: rgba(0,0,0,0.9); 
+            backdrop-filter: blur(8px); 
+            z-index: 200; 
+            justify-content: center; 
+            align-items: center; 
+            padding: 16px; 
+        }
+        .modal-content { 
+            background: #11141c; 
+            width: 100%; 
+            max-width: 500px; 
+            border-radius: 18px; 
+            padding: 22px; 
+            border: 2px solid #bf953f; 
+            max-height: 88vh; 
+            overflow-y: auto; 
+            box-shadow: 0 10px 35px rgba(212, 175, 55, 0.3); 
+        }
+        .modal-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 16px; 
+            font-weight: bold; 
+            border-bottom: 1px solid #bf953f; 
+            padding-bottom: 10px; 
+            font-size: 1.1rem; 
+            color: var(--accent-gold); 
+        }
         .close-btn { cursor: pointer; font-size: 1.3rem; color: var(--text-muted); }
 
-        /* Admin UI Extensions */
-        .admin-nav { display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; }
-        .admin-nav-btn { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
-        .admin-nav-btn.active { background: var(--primary-red); color: white; border-color: var(--primary-red); font-weight: bold; }
+        input[type="number"], input[type="text"], input[type="password"], select { 
+            padding: 11px 14px; 
+            border-radius: 10px; 
+            border: 1px solid #3b2a1a; 
+            background: var(--bg-input); 
+            color: #fff; 
+            font-size: 0.9rem; 
+            width: 100%; 
+            outline: none; 
+        }
+        input:focus { border-color: var(--accent-gold); }
 
+        .btn-action { 
+            padding: 12px; 
+            background: linear-gradient(135deg, #bf953f, #aa771c); 
+            color: #000; 
+            border: none; 
+            border-radius: 10px; 
+            font-size: 0.95rem; 
+            font-weight: bold; 
+            cursor: pointer; 
+            width: 100%; 
+        }
+        .btn-danger { background: linear-gradient(135deg, #dc2626, #991b1b); color: white; }
+
+        /* Games Grid inside Modal */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .game-card-item {
+            background: rgba(20, 25, 35, 0.8);
+            border: 1px solid #d4af37;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .game-card-item:hover { transform: scale(1.03); }
+        .game-card-item img { width: 100%; height: 80px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
+        .game-card-item .title { font-size: 0.82rem; font-weight: bold; color: #fff; }
+
+        /* Admin UI preserve */
+        .admin-nav { display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; }
+        .admin-nav-btn { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
+        .admin-nav-btn.active { background: var(--accent-gold); color: #000; font-weight: bold; }
         .admin-tab { display: none; }
         .admin-tab.active { display: block; }
-
-        .user-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.8rem; }
-        .user-table th, .user-table td { padding: 8px; border: 1px solid var(--border); text-align: center; }
-        .user-table th { background: #0d1117; color: var(--accent-gold); }
-        .user-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-
-        .pass-text { color: #f43f5e; font-family: monospace; font-weight: bold; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+        .user-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .user-table th, .user-table td { padding: 8px; border: 1px solid #333; text-align: center; }
+        .user-table th { background: #000; color: var(--accent-gold); }
     </style>
 </head>
 <body>
 
-    <!-- Header -->
+    <!-- Header Section -->
     <header class="top-bar">
-        <div class="logo">AUREX <span>VIP</span></div>
-        <div class="user-nav">
-            <div class="balance-group">
-                <div class="balance-badge site" title="رصيد الموقع">🌐 <span id="siteBalance">0.00</span></div>
-                <div class="balance-badge bot" title="رصيد البوت">🤖 <span id="botBalance">0.00</span></div>
+        <div class="user-profile-badge" onclick="openAccountOrAuth()">
+            <div class="icon">👤</div>
+            <span class="username-text" id="topUsername">تسجيل الدخول</span>
+        </div>
+
+        <div class="balances-container">
+            <!-- Site Balance -->
+            <div class="balance-box" title="رصيد الموقع">
+                <span class="tag">NSP</span>
+                <span id="siteBalance">0.00</span>
             </div>
-            <button class="btn-sm" id="authBtn" onclick="openAuthModal()">دخول / تسجيل</button>
-            <button class="btn-sm" id="adminBtn" style="display:none; background: var(--accent-gold); color: #000;" onclick="openAdminModal()">لوحة الإدارة ⚙️</button>
+            <!-- Bot Balance -->
+            <div class="balance-box" title="رصيد البوت">
+                <span class="tag" style="background:#3b82f6; color:#fff;">🤖</span>
+                <span id="botBalance">0.00</span>
+            </div>
+            <!-- Admin Button -->
+            <button class="btn-action" id="adminBtn" style="display:none; padding:4px 8px; font-size:0.75rem; width:auto; background:var(--accent-gold);" onclick="openAdminModal()">⚙️</button>
         </div>
     </header>
 
-    <div class="container">
-        
-        <!-- User Dashboard -->
-        <div class="user-card" id="userDashboard" style="display: none;">
-            <div class="user-card-header">
-                <div class="user-info">
-                    <h3 id="displayUsername">المستخدم</h3>
-                    <p>المعرف: <span id="displayTgId">--</span></p>
-                </div>
-                <div style="display: flex; gap: 6px;">
-                    <button class="btn-sm" style="background: var(--accent-gold); color: #000; padding: 4px 8px;" onclick="claimBonus()">بونص 🎁</button>
-                    <button class="btn-sm" style="background: #334155; padding: 4px 8px;" onclick="logout()">خروج 🚪</button>
-                </div>
-            </div>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <span class="title">اللفات المجانية</span>
-                    <span class="value" id="freeSpins">0 🎰</span>
-                </div>
-                <div class="stat-box">
-                    <span class="title">الإحالات</span>
-                    <span class="value" id="referralsCount">0 👥</span>
-                </div>
-                <div class="stat-box">
-                    <span class="title">رابط الإحالة</span>
-                    <button class="btn-sm" style="padding: 2px 6px; font-size: 0.7rem; margin-top: 3px;" onclick="copyReferralLink()">نسخ 🔗</button>
-                </div>
-            </div>
+    <!-- Main Hero Spacer for Background graphic visibility -->
+    <main class="main-hero">
+        <!-- Content background artwork visible here -->
+    </main>
+
+    <!-- Bottom Actions matching attached image -->
+    <footer class="bottom-actions">
+        <!-- Button 1: Game List -->
+        <div class="gold-frame-btn" onclick="openGamesModal()">
+            <div class="btn-icon">🎮</div>
+            <div class="btn-title">الألعاب</div>
+            <div class="btn-sub">أكثر الألعاب لعباً</div>
         </div>
 
-        <!-- Balance Transfer -->
-        <div class="action-card">
-            <h4>🔄 التحويل المباشر بين رصيد البوت والموقع</h4>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <input type="number" id="transferAmount" placeholder="المبلغ المراد تحويله" min="0.1" step="any">
-                <div class="flex-row">
-                    <button class="btn-action btn-green" onclick="transferBalance('to_site')">إلى الموقع ⬇️</button>
-                    <button class="btn-action" style="background: #2563eb;" onclick="transferBalance('to_bot')">إلى البوت ⬆️</button>
-                </div>
-            </div>
+        <!-- Button 2: Account -->
+        <div class="gold-frame-btn" onclick="openAccountOrAuth()">
+            <div class="btn-icon">👤</div>
+            <div class="btn-title">حسابي</div>
+            <div class="btn-sub">الملف الشخصي</div>
         </div>
 
-        <!-- Gift Code -->
-        <div class="action-card">
-            <h4>🎟️ شحن كارت / كود هدايا</h4>
-            <div class="flex-row">
-                <input type="text" id="giftCodeInput" placeholder="أدخل الكود هنا">
-                <button class="btn-action btn-gold" style="width: 120px;" onclick="useGiftCode()">شحن ⚡</button>
-            </div>
+        <!-- Button 3: Gift Code -->
+        <div class="gold-frame-btn" onclick="openGiftModal()">
+            <div class="btn-icon">🎁</div>
+            <div class="btn-title">إدخال كود هدية</div>
+            <div class="btn-sub">شحن الأكواد</div>
         </div>
+    </footer>
 
-        <!-- Games Grid -->
-        <div class="games-grid">
-            
-            <!-- Wheel Banner -->
-            <div class="game-card wheel-banner">
-                <h3 style="color: #fef08a; font-size: 1.3rem;">🎡 عجلة الحظ AUREX</h3>
-                <p style="font-size: 0.85rem; color: #ddd6fe; margin: 8px 0 15px 0;">أدر العجلة واكسب جوائز ورصيد مجاني!</p>
-                <button class="btn-action btn-gold" onclick="window.location.href='/wheel'">دخول العجلة 🚀</button>
-            </div>
-
-            <!-- Fruit Slot Game -->
-            <div class="game-card">
-                <h3>لعبة الفواكه AUREX SLOTS 🎰</h3>
-                
-                <div class="slot-machine">
-                    <div class="reel" id="r1">🍎</div>
-                    <div class="reel" id="r2">🍋</div>
-                    <div class="reel" id="r3">💎</div>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <input type="number" id="betAmount" value="10" min="1" placeholder="مبلغ الرهان">
-                    <button class="btn-action" id="spinBtn" onclick="playGame()">بدء التدوير 🎰</button>
-                </div>
-
-                <div class="status" id="statusMessage"></div>
-            </div>
-
-        </div>
-
-    </div>
-
-    <!-- Navigation -->
-    <nav class="bottom-bar">
-        <div class="nav-item active"><span>🏠</span>الرئيسية</div>
-        <div class="nav-item" onclick="window.location.href='/wheel'"><span>🎡</span>العجلة</div>
-        <div class="nav-item" onclick="openAuthModal()"><span>👤</span>حسابي</div>
-    </nav>
-
-    <!-- Modal Login / Register -->
+    <!-- Modal 1: Login Modal (Registration Removed) -->
     <div class="modal" id="authModal">
         <div class="modal-content">
             <div class="modal-header">
-                <span>تسجيل الدخول / حساب جديد</span>
+                <span>تسجيل الدخول للموقع</span>
                 <span class="close-btn" onclick="closeModal('authModal')">✕</span>
             </div>
 
-            <div style="display: flex; gap: 8px; margin-bottom: 15px;">
-                <button class="btn-action" id="loginTabBtn" style="background: var(--primary-red);" onclick="switchAuthTab('login')">تسجيل دخول</button>
-                <button class="btn-action" id="registerTabBtn" style="background: var(--bg-input);" onclick="switchAuthTab('register')">حساب جديد</button>
-            </div>
-
-            <!-- Form Login -->
-            <form id="loginForm" onsubmit="handleLogin(event)" style="display: flex; flex-direction: column; gap: 10px;">
+            <form id="loginForm" onsubmit="handleLogin(event)" style="display: flex; flex-direction: column; gap: 12px;">
                 <input type="text" id="loginUsername" placeholder="اسم المستخدم" required>
                 <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
                 <button type="submit" class="btn-action">دخول 🔓</button>
             </form>
-
-            <!-- Form Register -->
-            <form id="registerForm" onsubmit="handleRegister(event)" style="display: none; flex-direction: column; gap: 10px;">
-                <input type="text" id="regTelegramId" placeholder="معرف التلغرام (اختياري / تلقائي)">
-                <input type="text" id="regUsername" placeholder="اسم المستخدم الجديد" required>
-                <input type="password" id="regPassword" placeholder="كلمة المرور" required>
-                <button type="submit" class="btn-action btn-green">إنشاء الحساب ✍️</button>
-            </form>
         </div>
     </div>
 
-    <!-- Complete Admin Dashboard Modal -->
+    <!-- Modal 2: Gift Code Redemption -->
+    <div class="modal" id="giftModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>🎁 إدخال كود هدية</span>
+                <span class="close-btn" onclick="closeModal('giftModal')">✕</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <p style="font-size: 0.85rem; color: var(--text-muted);">أدخل كود الهدية الذي حصلت عليه من إدارة الموقع حصراً:</p>
+                <input type="text" id="giftCodeInput" placeholder="أدخل الكود هنا">
+                <button class="btn-action" onclick="useGiftCode()">شحن الكود ⚡</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Account & Activity Log -->
+    <div class="modal" id="accountModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>👤 حسابي والسجل</span>
+                <span class="close-btn" onclick="closeModal('accountModal')">✕</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 10px; border: 1px solid #333;">
+                    <p style="font-weight: bold; color: var(--accent-gold);" id="accUsername">المستخدم: --</p>
+                    <p style="font-size: 0.8rem; color: var(--text-muted);" id="accTgId">معرف التلغرام: --</p>
+                </div>
+                
+                <h5 style="color: #fff; margin-top: 5px;">سجل النشاطات والأرصدة</h5>
+                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-size: 0.85rem;">
+                    <p>🌐 رصيد الموقع: <span id="accSiteBal" style="color:var(--accent-gold);">0.00</span></p>
+                    <p>🤖 رصيد البوت: <span id="accBotBal" style="color:#3b82f6;">0.00</span></p>
+                </div>
+
+                <button class="btn-action btn-danger" onclick="logout()">تسجيل الخروج 🚪</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 4: Games List (Dynamic Auto-Loader) -->
+    <div class="modal" id="gamesModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <span>🎮 قائمة الألعاب المتاحة</span>
+                <span class="close-btn" onclick="closeModal('gamesModal')">✕</span>
+            </div>
+            <div class="games-grid" id="dynamicGamesList">
+                <p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">جاري تحميل الألعاب من المجلد...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 5: Complete Preserved Admin Dashboard -->
     <div class="modal" id="adminModal">
         <div class="modal-content" style="max-width: 650px;">
             <div class="modal-header">
-                <span style="color: var(--accent-gold);">لوحة تحكم المدير AUREX 👑</span>
+                <span>لوحة تحكم المدير AUREX 👑</span>
                 <span class="close-btn" onclick="closeModal('adminModal')">✕</span>
             </div>
 
@@ -254,7 +367,7 @@
 
             <!-- Tab 1: Players & Passwords -->
             <div class="admin-tab active" id="usersTab">
-                <h5 style="color: #fff; margin-bottom: 8px;">قائمة كل اللاعبين الميسجلين</h5>
+                <h5 style="color: #fff; margin-bottom: 8px;">قائمة اللاعبين المسجلين</h5>
                 <div style="overflow-x: auto; max-height: 250px;">
                     <table class="user-table">
                         <thead>
@@ -272,7 +385,7 @@
                     </table>
                 </div>
 
-                <div style="margin-top: 15px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; border: 1px solid var(--border);">
+                <div style="margin-top: 15px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px;">
                     <h5 style="color: var(--accent-gold); margin-bottom: 8px;">تعديل رصيد لاعب</h5>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
                         <input type="number" id="admUserTgId" placeholder="ID اللاعب">
@@ -288,22 +401,22 @@
                             <option value="deduct">خصم (-)</option>
                         </select>
                     </div>
-                    <button class="btn-sm" style="width: 100%; background: #2563eb;" onclick="adminUpdateUserBalance()">تحديث رصيد اللاعب ✏️</button>
+                    <button class="btn-action" onclick="adminUpdateUserBalance()">تحديث رصيد اللاعب ✏️</button>
                 </div>
             </div>
 
             <!-- Tab 2: Cashier & Gift Codes -->
             <div class="admin-tab" id="cashierTab">
-                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px;">
-                    <h5 style="color: var(--accent-green); margin-bottom: 8px;">شحن كاشيرة البوتات</h5>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                    <h5 style="color: #10b981; margin-bottom: 8px;">شحن كاشيرة البوتات</h5>
                     <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                         <input type="number" id="admCashierBotId" value="1" placeholder="Bot ID">
-                        <input type="number" id="admCashierAmount" placeholder="المبلغ المراد إضافته">
+                        <input type="number" id="admCashierAmount" placeholder="المبلغ">
                     </div>
-                    <button class="btn-sm" style="width: 100%; background: var(--accent-green);" onclick="adminAddCashier()">إضافة رصيد للكاشيرة 💸</button>
+                    <button class="btn-action" style="background:#10b981; color:#fff;" onclick="adminAddCashier()">إضافة رصيد للكاشيرة 💸</button>
                 </div>
 
-                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; border: 1px solid var(--border);">
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px;">
                     <h5 style="color: var(--accent-gold); margin-bottom: 8px;">توليد كود كارت هدايا</h5>
                     <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
                         <input type="text" id="admCodeText" placeholder="الكود (فارغ للتوليد التلقائي)">
@@ -312,31 +425,31 @@
                             <input type="number" id="admCodeUses" value="1" placeholder="مرات الاستخدام">
                         </div>
                     </div>
-                    <button class="btn-sm" style="width: 100%; background: var(--accent-gold); color: #000;" onclick="adminCreateCode()">توليد الكود 🔑</button>
+                    <button class="btn-action" onclick="adminCreateCode()">توليد الكود 🔑</button>
                 </div>
             </div>
 
             <!-- Tab 3: Game Algorithms & Settings -->
             <div class="admin-tab" id="algoTab">
-                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; border: 1px solid var(--border);">
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px;">
                     <h5 style="color: var(--primary-red); margin-bottom: 8px;">إعدادات الخوارزميات والصيانة</h5>
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         <div>
-                            <label style="font-size: 0.75rem; color: var(--text-muted);">نسبة ربح الألعاب (RTP %):</label>
+                            <label style="font-size: 0.75rem;">نسبة ربح الألعاب (RTP %):</label>
                             <input type="number" id="admRtpRate" placeholder="30.0">
                         </div>
                         <div>
-                            <label style="font-size: 0.75rem; color: var(--text-muted);">قيمة البونص الترحيبي:</label>
+                            <label style="font-size: 0.75rem;">قيمة البونص الترحيبي:</label>
                             <input type="number" id="admWelcomeBonus" placeholder="10.0">
                         </div>
                         <div>
-                            <label style="font-size: 0.75rem; color: var(--text-muted);">وضع الصيانة للموقع:</label>
+                            <label style="font-size: 0.75rem;">وضع الصيانة للموقع:</label>
                             <select id="admMaintenance">
                                 <option value="off">مغلق (الموقع يعمل)</option>
                                 <option value="on">مفعل (وضع الصيانة)</option>
                             </select>
                         </div>
-                        <button class="btn-sm" style="background: var(--primary-red); margin-top: 5px;" onclick="adminSaveSettings()">حفظ الإعدادات والخوارزمية 💾</button>
+                        <button class="btn-action btn-danger" style="margin-top: 5px;" onclick="adminSaveSettings()">حفظ الإعدادات 💾</button>
                     </div>
                 </div>
             </div>
@@ -349,11 +462,8 @@
         try { tg.expand(); } catch(e) {}
 
         let currentUser = null;
-        const symbols = ['🍎', '🍋', '🍒', '🍉', '🔔', '💎', '7️⃣'];
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const refParam = urlParams.get('ref');
-
+        // Load Account Data
         async function loadUserAccount() {
             try {
                 const res = await fetch('/api/user/account');
@@ -372,46 +482,23 @@
             if (currentUser) {
                 document.getElementById('siteBalance').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2);
                 document.getElementById('botBalance').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2);
-                document.getElementById('displayUsername').innerText = currentUser.site_username || currentUser.username || 'عميل';
-                document.getElementById('displayTgId').innerText = currentUser.telegram_id;
-                document.getElementById('freeSpins').innerText = (currentUser.free_spins || 0) + ' 🎰';
-                document.getElementById('referralsCount').innerText = (currentUser.referrals_count || 0) + ' 👥';
+                document.getElementById('topUsername').innerText = currentUser.site_username || currentUser.username || 'عميل';
+                
+                document.getElementById('accUsername').innerText = "المستخدم: " + (currentUser.site_username || currentUser.username || '--');
+                document.getElementById('accTgId').innerText = "معرف التلغرام: " + (currentUser.telegram_id || '--');
+                document.getElementById('accSiteBal').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2);
+                document.getElementById('accBotBal').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2);
 
-                document.getElementById('userDashboard').style.display = 'block';
-                document.getElementById('authBtn').innerText = currentUser.site_username || 'حسابي';
                 document.getElementById('adminBtn').style.display = currentUser.is_admin ? 'inline-block' : 'none';
             } else {
                 document.getElementById('siteBalance').innerText = '0.00';
                 document.getElementById('botBalance').innerText = '0.00';
-                document.getElementById('userDashboard').style.display = 'none';
-                document.getElementById('authBtn').innerText = 'دخول / تسجيل';
+                document.getElementById('topUsername').innerText = 'تسجيل الدخول';
                 document.getElementById('adminBtn').style.display = 'none';
             }
         }
 
-        // --- Auth Functions ---
-        function openAuthModal() {
-            switchAuthTab('login');
-            openModal('authModal');
-        }
-
-        function switchAuthTab(tab) {
-            if (tab === 'login') {
-                document.getElementById('loginForm').style.display = 'flex';
-                document.getElementById('registerForm').style.display = 'none';
-                document.getElementById('loginTabBtn').style.background = 'var(--primary-red)';
-                document.getElementById('registerTabBtn').style.background = 'var(--bg-input)';
-            } else {
-                document.getElementById('loginForm').style.display = 'none';
-                document.getElementById('registerForm').style.display = 'flex';
-                document.getElementById('loginTabBtn').style.background = 'var(--bg-input)';
-                document.getElementById('registerTabBtn').style.background = 'var(--accent-green)';
-                if (tg.initDataUnsafe?.user?.id) {
-                    document.getElementById('regTelegramId').value = tg.initDataUnsafe.user.id;
-                }
-            }
-        }
-
+        // Login Logic
         async function handleLogin(e) {
             e.preventDefault();
             const username = document.getElementById('loginUsername').value.trim();
@@ -433,65 +520,14 @@
             } catch (err) { alert('خطأ في الاتصال بالسيرفر'); }
         }
 
-        async function handleRegister(e) {
-            e.preventDefault();
-            const telegram_id = document.getElementById('regTelegramId').value.trim();
-            const site_user = document.getElementById('regUsername').value.trim();
-            const site_pass = document.getElementById('regPassword').value.trim();
-
-            try {
-                const res = await fetch('/api/register_site', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telegram_id, site_user, site_pass, referred_by: refParam })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message || 'تم التقديم بنجاح');
-                    closeModal('authModal');
-                    await loadUserAccount();
-                } else { alert(data.error); }
-            } catch (err) { alert('خطأ في الاتصال بالسيرفر'); }
-        }
-
-        async function claimBonus() {
-            try {
-                const res = await fetch('/api/bonus/welcome', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message || data.error);
-                if (res.ok) await loadUserAccount();
-            } catch (e) { alert('خطأ في السيرفر'); }
-        }
-
         async function logout() {
             await fetch('/api/auth/logout', { method: 'POST' });
             currentUser = null;
             updateUI();
+            closeModal('accountModal');
         }
 
-        // --- Transfers & Codes ---
-        async function transferBalance(direction) {
-            if (!currentUser) return alert('يرجى تسجيل الدخول أولاً');
-            const amount = parseFloat(document.getElementById('transferAmount').value);
-            if (!amount || amount <= 0) return alert('أدخل مبلغاً صالحاً');
-
-            const endpoint = direction === 'to_site' ? '/api/balance/transfer_to_site' : '/api/balance/transfer_to_bot';
-
-            try {
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message);
-                    document.getElementById('transferAmount').value = '';
-                    await loadUserAccount();
-                } else { alert(data.error); }
-            } catch (e) { alert('خطأ في السيرفر'); }
-        }
-
+        // Use Gift Code
         async function useGiftCode() {
             if (!currentUser) return alert('يرجى تسجيل الدخول أولاً');
             const code = document.getElementById('giftCodeInput').value.trim();
@@ -507,77 +543,58 @@
                 if (res.ok) {
                     alert(data.message);
                     document.getElementById('giftCodeInput').value = '';
+                    closeModal('giftModal');
                     await loadUserAccount();
                 } else { alert(data.error); }
             } catch (e) { alert('خطأ في السيرفر'); }
         }
 
-        function copyReferralLink() {
-            if (!currentUser) return;
-            const link = `${window.location.origin}/?ref=${currentUser.telegram_id}`;
-            navigator.clipboard.writeText(link);
-            alert('تم نسخ رابط الإحالة:\n' + link);
-        }
-
-        // --- Slot Game ---
-        async function playGame() {
-            if (!currentUser) return alert('يرجى تسجيل الدخول للعب');
-            const bet = parseFloat(document.getElementById('betAmount').value);
-            const btn = document.getElementById('spinBtn');
-            const status = document.getElementById('statusMessage');
-
-            if (!bet || bet <= 0) return alert('أدخل مبلغ رهان صحيح');
-
-            btn.disabled = true;
-            status.innerText = 'جاري التدوير...';
+        // --- Dynamic Games Loader (Reads from folder/API without modifying code) ---
+        async function openGamesModal() {
+            openModal('gamesModal');
+            const container = document.getElementById('dynamicGamesList');
+            container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">جاري جلب الألعاب...</p>';
 
             try {
-                const res = await fetch('/api/play', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bet_amount: bet })
-                });
-                const data = await res.json();
-
-                if (!res.ok) {
-                    status.className = 'status lose';
-                    status.innerText = data.error;
-                    btn.disabled = false;
-                    return;
-                }
-
-                let spins = 0;
-                const interval = setInterval(() => {
-                    document.getElementById('r1').innerText = symbols[Math.floor(Math.random() * symbols.length)];
-                    document.getElementById('r2').innerText = symbols[Math.floor(Math.random() * symbols.length)];
-                    document.getElementById('r3').innerText = symbols[Math.floor(Math.random() * symbols.length)];
-                    spins++;
-
-                    if (spins > 10) {
-                        clearInterval(interval);
-                        if (data.win) {
-                            document.getElementById('r1').innerText = '💎';
-                            document.getElementById('r2').innerText = '💎';
-                            document.getElementById('r3').innerText = '💎';
-                            status.className = 'status win';
-                            status.innerText = `فزت بـ ${data.payout.toFixed(2)} $ 🎉`;
-                        } else {
-                            status.className = 'status lose';
-                            status.innerText = 'حظ أوفر، حاول مجدداً!';
-                        }
-                        currentUser.site_balance = data.new_balance;
-                        updateUI();
-                        btn.disabled = false;
+                // Requests endpoint that returns list of files/folders in games directory
+                const res = await fetch('/api/games');
+                if (res.ok) {
+                    const games = await res.json(); // Expected format: [{ title: 'Game Name', path: '/games/game1', icon: '/games/game1/icon.png' }]
+                    if (games.length === 0) {
+                        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">لا توجد ألعاب حالياً في المجلد.</p>';
+                        return;
                     }
-                }, 90);
-
+                    container.innerHTML = '';
+                    games.forEach(g => {
+                        container.innerHTML += `
+                            <div class="game-card-item" onclick="window.location.href='${g.path}'">
+                                <img src="${g.icon || 'https://via.placeholder.com/100?text=Game'}" alt="${g.title}">
+                                <div class="title">${g.title}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">سيتم إظهار الألعاب تلقائياً فور رفع المجلدات.</p>';
+                }
             } catch (e) {
-                status.innerText = 'خطأ في السيرفر';
-                btn.disabled = false;
+                container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">لا توجد ألعاب مضافة بعد.</p>';
             }
         }
 
-        // --- Admin Dashboard logic ---
+        function openAccountOrAuth() {
+            if (currentUser) {
+                openModal('accountModal');
+            } else {
+                openModal('authModal');
+            }
+        }
+
+        function openGiftModal() {
+            if (!currentUser) return alert('يرجى تسجيل الدخول أولاً');
+            openModal('giftModal');
+        }
+
+        // --- Preserved Admin Dashboard Logic ---
         function openAdminModal() {
             openModal('adminModal');
             loadAdminUsers();
@@ -604,7 +621,7 @@
                         <tr>
                             <td>${u.telegram_id}</td>
                             <td>${u.site_username || u.username || '-'}</td>
-                            <td><span class="pass-text">${u.site_password || 'بدون'}</span></td>
+                            <td><span style="color:#f43f5e; font-weight:bold;">${u.site_password || 'بدون'}</span></td>
                             <td>${parseFloat(u.bot_balance || 0).toFixed(2)}</td>
                             <td>${parseFloat(u.site_balance || 0).toFixed(2)}</td>
                         </tr>
@@ -636,7 +653,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rtp_rate, welcome_bonus, maintenance })
                 });
-                if (res.ok) alert('تم حفظ إعدادات الخوارزميات بنجاح');
+                if (res.ok) alert('تم حفظ الإعدادات بنجاح');
             } catch (e) { alert('خطأ في الاتصال'); }
         }
 
@@ -697,6 +714,7 @@
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
+        // Start initialization
         loadUserAccount();
     </script>
 </body>
