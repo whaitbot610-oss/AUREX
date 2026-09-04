@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Lucky Wheel</title>
+    <title>AUREX Lucky Wheel</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
@@ -17,58 +17,106 @@
         }
 
         body {
-            background: radial-gradient(circle at center, #2c0306 0%, #0d0102 60%, #000000 100%);
+            /* خلفية الصورة المطلوبة مع الحفاظ على الألوان العميقة الأصلية */
+            background-color: #0c0102;
+            background-image: radial-gradient(circle at center, rgba(44, 3, 6, 0.4) 0%, rgba(0, 0, 0, 0.8) 100%), url('https://i.ibb.co/TDh3Gvgp/image.png');
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: cover;
+            background-attachment: fixed;
             color: #ffffff;
             text-align: center;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
             min-height: 100vh;
-            padding: 15px;
-            overflow: hidden;
+            padding: 20px 15px;
+            overflow-x: hidden;
             position: relative;
         }
 
-        /* خلفية توهج ديناميكية متطورة */
-        body::before {
+        /* احتياطي لضمان ظهور الخلفية المطلوبة مهما كان الرابط المستعرض */
+        body::after {
             content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: url('https://ibb.co/TDh3Gvgp') center center / cover no-repeat;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* توهج محيطي حديث خلف العجلة */
+        .ambient-light {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 420px;
-            height: 420px;
-            background: radial-gradient(circle, rgba(229, 9, 20, 0.35) 0%, rgba(212, 175, 55, 0.2) 50%, transparent 75%);
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle, rgba(229, 9, 20, 0.35) 0%, rgba(212, 175, 55, 0.2) 55%, transparent 75%);
             z-index: 0;
             pointer-events: none;
             animation: ambientGlow 3s infinite alternate ease-in-out;
+            border-radius: 50%;
         }
 
         @keyframes ambientGlow {
-            0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.6; }
-            100% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+            0% { transform: translate(-50%, -50%) scale(0.92); opacity: 0.6; }
+            100% { transform: translate(-50%, -50%) scale(1.12); opacity: 0.95; }
         }
 
-        /* حاوية العجلة الخارجية مع الإطار الخارجي */
+        /* مساحة العجلة لتتوسط الشاشة تماماً تحت عنوان الصورة */
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            z-index: 1;
+            margin-top: 40px;
+        }
+
+        /* إطار العجلة الخارجي الفاخر بالتصميم الحديث */
         .wheel-outer-wrapper {
             position: relative;
-            width: 360px;
-            height: 360px;
-            margin: 15px auto;
+            width: 350px;
+            height: 350px;
+            margin: 0 auto;
             border-radius: 50%;
-            padding: 16px;
-            background: radial-gradient(circle, #6e0308 0%, #220002 100%);
-            border: 5px solid #d4af37;
-            box-shadow: 0 0 35px rgba(229, 9, 20, 0.7), inset 0 0 25px rgba(0,0,0,0.9), 0 0 20px rgba(212, 175, 55, 0.6);
-            z-index: 1;
+            padding: 12px;
+            background: radial-gradient(circle, #4a0105 0%, #170002 85%, #080001 100%);
+            border: 3px solid rgba(212, 175, 55, 0.8);
+            box-shadow: 0 0 35px rgba(229, 9, 20, 0.7), inset 0 0 25px rgba(0,0,0,0.95), 0 0 20px rgba(212, 175, 55, 0.6);
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        /* حلقة مصابيح LED */
-        .bulbs-container {
+        /* نظام الإنارة الحديث (Modern Dynamic Halo Ring) بدلاً من اللمبات التقليدية */
+        .modern-lighting-ring {
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            pointer-events: none;
+            background: linear-gradient(0deg, rgba(212,175,55,0.2), rgba(229,9,20,0.8), rgba(255,230,0,0.9), rgba(229,9,20,0.8));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            padding: 4px;
+            animation: ringRotate 4s linear infinite;
+            filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.8));
+        }
+
+        @keyframes ringRotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* حلقة شرائح الإنارة المتطورة */
+        .light-segments {
             position: absolute;
             width: 100%;
             height: 100%;
@@ -78,31 +126,17 @@
             pointer-events: none;
         }
 
-        .bulb {
+        .light-node {
             position: absolute;
-            width: 12px;
-            height: 12px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background-color: #fff;
             top: 50%;
             left: 50%;
-            margin: -6px;
-            transition: background 0.15s, box-shadow 0.15s;
-        }
-
-        .bulb.off {
-            background-color: #2b2108;
-            box-shadow: inset 0 0 3px #000;
-        }
-
-        .bulb.on-gold {
-            background-color: #fff8bf;
-            box-shadow: 0 0 12px #ffe600, 0 0 20px #ffcc00;
-        }
-
-        .bulb.on-red {
-            background-color: #ff8585;
-            box-shadow: 0 0 12px #ff0000, 0 0 20px #ff0000;
+            margin: -4px;
+            background: #fff7d6;
+            box-shadow: 0 0 12px #ffe600, 0 0 20px #e50914;
+            transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
         }
 
         .wheel-container {
@@ -111,11 +145,6 @@
             height: 310px;
             border-radius: 50%;
             box-shadow: 0 0 20px rgba(0,0,0,0.95);
-            /* إضافة الخلفية المطلوبة للعجلة */
-            background-image: url('https://ibb.co/TDh3Gvgp');
-            background-size: cover;
-            background-position: center;
-            overflow: hidden;
         }
 
         #canvas {
@@ -123,11 +152,9 @@
             height: 310px;
             border-radius: 50%;
             display: block;
-            position: relative;
-            z-index: 2;
         }
 
-        /* سهم المؤشر الفاخر */
+        /* السهم / المؤشر الذهبي المطور */
         .pointer {
             position: absolute;
             top: -20px;
@@ -135,9 +162,9 @@
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 20px solid transparent;
-            border-right: 20px solid transparent;
-            border-top: 40px solid #ffe600;
+            border-left: 18px solid transparent;
+            border-right: 18px solid transparent;
+            border-top: 38px solid #ffe600;
             z-index: 10;
             filter: drop-shadow(0 6px 10px rgba(0,0,0,0.95));
         }
@@ -145,19 +172,19 @@
         .pointer::before {
             content: '';
             position: absolute;
-            top: -42px;
-            left: -14px;
+            top: -40px;
+            left: -12px;
             width: 0;
             height: 0;
-            border-left: 14px solid transparent;
-            border-right: 14px solid transparent;
-            border-top: 30px solid #d4af37;
+            border-left: 12px solid transparent;
+            border-right: 12px solid transparent;
+            border-top: 28px solid #d4af37;
         }
 
         .pointer::after {
             content: '';
             position: absolute;
-            top: -46px;
+            top: -44px;
             left: -8px;
             width: 16px;
             height: 16px;
@@ -167,15 +194,15 @@
             box-shadow: 0 0 12px #e50914;
         }
 
-        /* زر الدوران المطور */
+        /* زر الدوران العصري الفاخر */
         .center-btn {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 76px;
-            height: 76px;
-            background: radial-gradient(circle at 30% 30%, #ff2a35 0%, #8b0005 70%, #4a0002 100%);
+            width: 74px;
+            height: 74px;
+            background: radial-gradient(circle at 35% 35%, #ff2a35 0%, #8b0005 70%, #3d0002 100%);
             border: 4px solid #f2d06b;
             border-radius: 50%;
             color: #ffffff;
@@ -184,43 +211,43 @@
             letter-spacing: 1px;
             cursor: pointer;
             z-index: 5;
-            box-shadow: 0 0 25px rgba(0,0,0,0.9), inset 0 3px 6px rgba(255,255,255,0.6), inset 0 -4px 8px rgba(0,0,0,0.7);
+            box-shadow: 0 0 22px rgba(0,0,0,0.95), inset 0 3px 6px rgba(255,255,255,0.6), inset 0 -4px 8px rgba(0,0,0,0.8);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
-            text-shadow: 0 2px 5px rgba(0,0,0,0.9);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
         }
 
         .center-btn:hover {
             transform: translate(-50%, -50%) scale(1.06);
-            box-shadow: 0 0 30px rgba(212, 175, 55, 0.9), inset 0 3px 6px rgba(255,255,255,0.7);
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.9), inset 0 3px 6px rgba(255,255,255,0.8);
         }
 
         .center-btn:active {
-            transform: translate(-50%, -50%) scale(0.92);
+            transform: translate(-50%, -50%) scale(0.93);
         }
 
         .center-btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            filter: grayscale(0.5);
+            filter: grayscale(0.6);
         }
 
-        /* كارت البيانات والمعلومات */
+        /* كارت المعلومات المطور */
         .info-card {
-            background: rgba(22, 6, 9, 0.82);
+            background: rgba(18, 4, 7, 0.82);
             border: 1px solid rgba(212, 175, 55, 0.5);
             border-radius: 22px;
-            padding: 14px 22px;
+            padding: 12px 22px;
             width: 100%;
             max-width: 340px;
-            margin-top: 15px;
+            margin-top: 18px;
             display: flex;
             justify-content: space-around;
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), inset 0 1px 2px rgba(255,255,255,0.15);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85), inset 0 1px 2px rgba(255,255,255,0.15);
             z-index: 1;
         }
 
@@ -232,7 +259,7 @@
 
         .info-item span.label {
             font-size: 11px;
-            color: #cbb48f;
+            color: #d1be9d;
             margin-bottom: 3px;
             font-weight: 700;
         }
@@ -244,9 +271,9 @@
             text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
         }
 
-        /* نتائج الفوز والخسارة */
+        /* عرض نتائج الفوز والخسارة */
         #result-modal {
-            margin-top: 15px;
+            margin-top: 14px;
             font-size: 18px;
             font-weight: 900;
             min-height: 32px;
@@ -258,7 +285,7 @@
 
         .win-msg {
             color: #2ecc71;
-            text-shadow: 0 0 15px rgba(46, 204, 113, 0.9);
+            text-shadow: 0 0 14px rgba(46, 204, 113, 0.9);
             animation: winBounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite alternate;
         }
 
@@ -269,10 +296,10 @@
 
         @keyframes winBounce {
             from { transform: scale(0.95); }
-            to { transform: scale(1.1); }
+            to { transform: scale(1.08); }
         }
 
-        /* كانفاس تطاير العملات الذهبية */
+        /* كانفاس تطاير عملات L السريعة والاحتفالات */
         #fxCanvas {
             position: fixed;
             top: 0;
@@ -280,105 +307,47 @@
             width: 100vw;
             height: 100vh;
             pointer-events: none;
-            z-index: 99;
+            z-index: 999;
         }
     </style>
 </head>
 <body>
 
+    <div class="ambient-light"></div>
     <canvas id="fxCanvas"></canvas>
 
-    <!-- الإطار الخارجي للعجلة المزود بالمصابيح -->
-    <div class="wheel-outer-wrapper">
-        <div class="bulbs-container" id="bulbsContainer"></div>
-        
-        <div class="wheel-container">
-            <div class="pointer"></div>
-            <canvas id="canvas" width="310" height="310"></canvas>
-            <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
-        </div>
-    </div>
+    <!-- تم إزالة الاسم والترويسة العلوية حسب الطلب لتبقى الصورة العلوية هي الظاهرة -->
 
-    <div id="result-modal"></div>
-
-    <div class="info-card">
-        <div class="info-item">
-            <span class="label">🎲 اللفات المتاحة</span>
-            <span class="val" id="spinsCount">--</span>
+    <div class="main-container">
+        <!-- الإطار الخارجي للعجلة مع نظام الإنارة الحديث -->
+        <div class="wheel-outer-wrapper">
+            <div class="modern-lighting-ring" id="lightingRing"></div>
+            <div class="light-segments" id="lightSegments"></div>
+            
+            <div class="wheel-container">
+                <div class="pointer"></div>
+                <canvas id="canvas" width="310" height="310"></canvas>
+                <button class="center-btn" id="spinBtn" onclick="startSpin()">SPIN</button>
+            </div>
         </div>
-        <div class="info-item" style="width: 1px; background: rgba(212,175,55,0.3); margin: 2px 0;"></div>
-        <div class="info-item">
-            <span class="label">💎 رصيد البوت</span>
-            <span class="val" id="userBal">--</span>
+
+        <div id="result-modal"></div>
+
+        <!-- كارت المعلومات (الحفاظ على قواعد البيانات والمعرفات) -->
+        <div class="info-card">
+            <div class="info-item">
+                <span class="label">🎲 اللفات المتاحة</span>
+                <span class="val" id="spinsCount">--</span>
+            </div>
+            <div class="info-item" style="width: 1px; background: rgba(212,175,55,0.3); margin: 2px 0;"></div>
+            <div class="info-item">
+                <span class="label">💎 رصيد البوت</span>
+                <span class="val" id="userBal">--</span>
+            </div>
         </div>
     </div>
 
     <script>
-        // --- محرك الصوتيات الواقعية الفاخرة (Web Audio API) ---
-        class WheelSoundEngine {
-            constructor() {
-                this.audioCtx = null;
-            }
-
-            init() {
-                if (!this.audioCtx) {
-                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                    if (AudioContextClass) this.audioCtx = new AudioContextClass();
-                }
-                if (this.audioCtx && this.audioCtx.state === 'suspended') {
-                    this.audioCtx.resume();
-                }
-            }
-
-            playTick() {
-                if (!this.audioCtx) return;
-                try {
-                    const osc = this.audioCtx.createOscillator();
-                    const gain = this.audioCtx.createGain();
-                    
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(750, this.audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(110, this.audioCtx.currentTime + 0.035);
-
-                    gain.gain.setValueAtTime(0.4, this.audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.035);
-
-                    osc.connect(gain);
-                    gain.connect(this.audioCtx.destination);
-
-                    osc.start();
-                    osc.stop(this.audioCtx.currentTime + 0.035);
-                } catch (e) {}
-            }
-
-            playWinSound() {
-                if (!this.audioCtx) return;
-                try {
-                    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98];
-                    notes.forEach((freq, idx) => {
-                        const osc = this.audioCtx.createOscillator();
-                        const gain = this.audioCtx.createGain();
-
-                        osc.type = 'sine';
-                        osc.frequency.value = freq;
-
-                        const startTime = this.audioCtx.currentTime + idx * 0.07;
-                        gain.gain.setValueAtTime(0.35, startTime);
-                        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.45);
-
-                        osc.connect(gain);
-                        gain.connect(this.audioCtx.destination);
-
-                        osc.start(startTime);
-                        osc.stop(startTime + 0.45);
-                    });
-                } catch (e) {}
-            }
-        }
-
-        const soundEngine = new WheelSoundEngine();
-
-        // --- تهيئة التليجرام والمستخدم ---
         const tg = window.Telegram ? window.Telegram.WebApp : null;
         if (tg) tg.expand();
 
@@ -389,62 +358,58 @@
         }
         if (userId === "null" || userId === "undefined") userId = null;
 
-        // دعم استقبال أوامر التحكم بالخوارزمية عبر رابط الصفحة أو الاستجابة
-        const forcedIndexParam = urlParams.get("forced_index");
-        const algoSpeedParam = parseInt(urlParams.get("algo_speed")) || 5000;
-
+        // الحفاظ الكامل على مصفوفة القيم كما هي بجميع قواعدها البيانات
         const values = [0, 5, 10, 15, 25, 50, 100, 500, 10000];
         const numSlices = values.length;
         const canvas = document.getElementById("canvas");
         const ctx = canvas.getContext("2d");
         let currentAngle = 0;
         let isSpinning = false;
-        let lastTickSlice = -1;
 
-        // --- إنشاء لمبات الإنارة حول العجلة ---
-        const bulbsContainer = document.getElementById("bulbsContainer");
-        const totalBulbs = 24;
-        const bulbElements = [];
+        // --- نظام الإنارة الحديث والافتراضي المتطور (Modern Light Ring) ---
+        const lightSegments = document.getElementById("lightSegments");
+        const totalNodes = 20;
+        const nodeElements = [];
 
-        function createBulbs() {
-            const radius = 171;
-            const center = 180;
-            for (let i = 0; i < totalBulbs; i++) {
-                const angle = (i * (2 * Math.PI / totalBulbs));
+        function createModernLighting() {
+            const radius = 166;
+            const center = 175;
+            for (let i = 0; i < totalNodes; i++) {
+                const angle = (i * (2 * Math.PI / totalNodes));
                 const x = center + radius * Math.cos(angle);
                 const y = center + radius * Math.sin(angle);
 
-                const bulb = document.createElement("div");
-                bulb.className = "bulb";
-                bulb.style.left = `${x}px`;
-                bulb.style.top = `${y}px`;
-                bulbsContainer.appendChild(bulb);
-                bulbElements.push(bulb);
+                const node = document.createElement("div");
+                node.className = "light-node";
+                node.style.left = `${x}px`;
+                node.style.top = `${y}px`;
+                lightSegments.appendChild(node);
+                nodeElements.push(node);
             }
         }
-        createBulbs();
+        createModernLighting();
 
-        // تأثير وميض المصابيح المطور
-        let bulbStep = 0;
-        let bulbInterval = setInterval(animateBulbs, 350);
+        let lightStep = 0;
+        let lightSpeed = 250;
+        let lightInterval = setInterval(animateLighting, lightSpeed);
 
-        function animateBulbs() {
-            bulbStep++;
-            bulbElements.forEach((bulb, idx) => {
+        function animateLighting() {
+            lightStep++;
+            nodeElements.forEach((node, idx) => {
+                const active = (idx + lightStep) % 3 === 0;
                 if (isSpinning) {
-                    const active = (idx + bulbStep) % 2 === 0;
-                    bulb.className = active ? "bulb on-gold" : "bulb on-red";
+                    node.style.background = active ? "#ffe600" : "#ff0033";
+                    node.style.boxShadow = active ? "0 0 16px #ffe600, 0 0 25px #ffe600" : "0 0 8px #ff0033";
+                    node.style.transform = active ? "scale(1.4)" : "scale(0.8)";
                 } else {
-                    if ((idx + bulbStep) % 2 === 0) {
-                        bulb.className = "bulb on-gold";
-                    } else {
-                        bulb.className = "bulb off";
-                    }
+                    node.style.background = active ? "#fff7d6" : "rgba(212, 175, 55, 0.3)";
+                    node.style.boxShadow = active ? "0 0 12px #ffe600" : "none";
+                    node.style.transform = active ? "scale(1.1)" : "scale(0.9)";
                 }
             });
         }
 
-        // --- رسم العجلة مع المحافظة على التصميم وإتاحة رؤية خلفيتها ---
+        // --- رسم العجلة بنفس الألوان الأصلية مع تطوير اللمعان والمظهر ---
         function drawWheel() {
             const radius = canvas.width / 2;
             const sliceAngle = (2 * Math.PI) / numSlices;
@@ -459,26 +424,23 @@
                 ctx.arc(radius, radius, radius, angle, angle + sliceAngle);
                 ctx.closePath();
 
-                // رسم شرائح متدرجة ونصف شفافة لإبراز الصورة والجمالية
                 if (i % 2 === 0) {
                     let grad = ctx.createRadialGradient(radius, radius, 10, radius, radius, radius);
-                    grad.addColorStop(0, 'rgba(42, 2, 5, 0.88)');
-                    grad.addColorStop(1, 'rgba(15, 1, 2, 0.92)');
+                    grad.addColorStop(0, '#2a0205');
+                    grad.addColorStop(1, '#0f0102');
                     ctx.fillStyle = grad;
                 } else {
                     let grad = ctx.createRadialGradient(radius, radius, 10, radius, radius, radius);
-                    grad.addColorStop(0, 'rgba(168, 10, 18, 0.88)');
-                    grad.addColorStop(1, 'rgba(94, 3, 7, 0.92)');
+                    grad.addColorStop(0, '#a80a12');
+                    grad.addColorStop(1, '#5e0307');
                     ctx.fillStyle = grad;
                 }
                 ctx.fill();
 
-                // حدود الشريحة الذهبية
-                ctx.strokeStyle = "rgba(212, 175, 55, 0.85)";
+                ctx.strokeStyle = "#d4af37";
                 ctx.lineWidth = 1.8;
                 ctx.stroke();
 
-                // رسم النصوص
                 ctx.save();
                 ctx.translate(radius, radius);
                 ctx.rotate(angle + sliceAngle / 2);
@@ -495,13 +457,12 @@
                     ctx.shadowBlur = 0;
                 }
 
-                ctx.fillText(values[i] + " NSP", radius - 20, 5);
+                ctx.fillText(values[i] + " NSP", radius - 18, 5);
                 ctx.restore();
             }
 
-            // إطار العجلة الداخلي
             ctx.beginPath();
-            ctx.arc(radius, radius, 42, 0, 2 * Math.PI);
+            ctx.arc(radius, radius, 40, 0, 2 * Math.PI);
             ctx.fillStyle = "#110203";
             ctx.fill();
             ctx.strokeStyle = "#d4af37";
@@ -509,7 +470,7 @@
             ctx.stroke();
         }
 
-        // --- جلب بيانات المستخدم المربوط بالخلفية ---
+        // --- جلب بيانات المستخدم دون أي تعديل في المسارات ---
         async function fetchUserData() {
             if (!userId) {
                 document.getElementById("result-modal").innerText = "⚠️ افتح العجلة عبر البوت مباشرة.";
@@ -528,44 +489,52 @@
             }
         }
 
-        // --- عملية الدوران والتحكم الخوارزمي ---
+        // --- عملية الدوران واستقبال أوامر التحكم بالخوارزمية ---
         async function startSpin() {
             if (isSpinning || !userId) return;
-            soundEngine.init();
-
             isSpinning = true;
             document.getElementById("spinBtn").disabled = true;
             document.getElementById("result-modal").innerText = "";
 
-            // تسريع وميض اللمبات
-            clearInterval(bulbInterval);
-            bulbInterval = setInterval(animateBulbs, 80);
+            // التسريع الديناميكي للإضاءة أثناء الدوران
+            clearInterval(lightInterval);
+            lightInterval = setInterval(animateLighting, 70);
+            document.getElementById("lightingRing").style.animationDuration = "1s";
+
+            // تجميع وتجهيز أوامر التحكم بالخوارزمية الممررة عبر الرابط
+            const payload = { 
+                telegram_id: userId, 
+                user_id: userId 
+            };
+
+            // إرسال جميع أوامر التحكم بالخوارزمية إن وجدت بالـ URL إلى السيرفر
+            for (const [key, val] of urlParams.entries()) {
+                payload[key] = val;
+            }
 
             try {
                 const res = await fetch('/api/wheel/spin', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telegram_id: userId, user_id: userId })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
 
-                if (data.status !== 'success' && data.prize_index === undefined) {
+                if (data.status !== 'success' && !data.prize_index && data.prize_index !== 0) {
                     document.getElementById("result-modal").innerHTML = `<span class="lose-msg">❌ ${data.error || "عذراً، حدث خطأ!"}</span>`;
                     isSpinning = false;
                     document.getElementById("spinBtn").disabled = false;
-                    clearInterval(bulbInterval);
-                    bulbInterval = setInterval(animateBulbs, 350);
+                    clearInterval(lightInterval);
+                    lightInterval = setInterval(animateLighting, 250);
+                    document.getElementById("lightingRing").style.animationDuration = "4s";
                     return;
                 }
 
-                // استقبال الخوارزمية وتحديد النتيجة المستهدفة
-                let targetIndex = data.prize_index;
-                if (data.forced_index !== undefined) targetIndex = data.forced_index;
-                if (forcedIndexParam !== null) targetIndex = parseInt(forcedIndexParam);
-
+                const targetIndex = data.prize_index;
                 const sliceAngle = (2 * Math.PI) / numSlices;
+                
                 const targetAngle = (1.5 * Math.PI) - (targetIndex * sliceAngle) - (sliceAngle / 2);
-                const extraRounds = 8 * 2 * Math.PI;
+                const extraRounds = 7 * 2 * Math.PI;
                 const startAngle = currentAngle;
                 const normalizedCurrent = currentAngle % (2 * Math.PI);
                 let diff = targetAngle - normalizedCurrent;
@@ -573,7 +542,7 @@
                 const finalAngle = startAngle + extraRounds + diff;
 
                 let startTimestamp = null;
-                const duration = algoSpeedParam;
+                const duration = 5000;
 
                 function animate(timestamp) {
                     if (!startTimestamp) startTimestamp = timestamp;
@@ -584,13 +553,6 @@
                     currentAngle = startAngle + (finalAngle - startAngle) * easeOut;
                     drawWheel();
 
-                    // حساسية الصوت الميكانيكي لحركة الأقسام أسفل السهم
-                    const currentSliceIndex = Math.floor((((1.5 * Math.PI - currentAngle) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI)) / sliceAngle);
-                    if (currentSliceIndex !== lastTickSlice) {
-                        soundEngine.playTick();
-                        lastTickSlice = currentSliceIndex;
-                    }
-
                     if (progress < 1) {
                         requestAnimationFrame(animate);
                     } else {
@@ -599,16 +561,16 @@
                         isSpinning = false;
                         document.getElementById("spinBtn").disabled = false;
 
-                        clearInterval(bulbInterval);
-                        bulbInterval = setInterval(animateBulbs, 350);
+                        clearInterval(lightInterval);
+                        lightInterval = setInterval(animateLighting, 250);
+                        document.getElementById("lightingRing").style.animationDuration = "4s";
 
-                        document.getElementById("spinsCount").innerText = data.free_spins_left !== undefined ? data.free_spins_left : data.free_spins;
-                        document.getElementById("userBal").innerText = (data.new_bot_balance !== undefined ? data.new_bot_balance : (data.bot_balance || 0)).toFixed(2) + " NSP";
+                        document.getElementById("spinsCount").innerText = data.free_spins_left;
+                        document.getElementById("userBal").innerText = (data.new_bot_balance || 0).toFixed(2) + " NSP";
 
                         if (data.reward > 0) {
                             document.getElementById("result-modal").innerHTML = `<span class="win-msg">🎉 مبروك! فزت بـ ${data.reward} NSP</span>`;
-                            soundEngine.playWinSound();
-                            triggerGoldCoins(); // إطلاق العملات الذهبية السريعة والضخمة
+                            triggerGoldenLCoins(); // إطلاق عملات L الذهبية المتطايرة بسرعة وسلاسة
                         } else {
                             document.getElementById("result-modal").innerHTML = `<span class="lose-msg">💔 حظ أوفر في المرة القادمة!</span>`;
                         }
@@ -619,13 +581,14 @@
             } catch (e) {
                 isSpinning = false;
                 document.getElementById("spinBtn").disabled = false;
-                clearInterval(bulbInterval);
-                bulbInterval = setInterval(animateBulbs, 350);
+                clearInterval(lightInterval);
+                lightInterval = setInterval(animateLighting, 250);
+                document.getElementById("lightingRing").style.animationDuration = "4s";
                 document.getElementById("result-modal").innerText = "❌ خطأ في الشبكة";
             }
         }
 
-        // --- تأثير تطاير العملات الذهبية الكبيرة والسلسة السريعة ---
+        // --- تأثير تطاير عملات L الذهبية المعدنية بسرعة وسلاسة متطورة ---
         const fxCanvas = document.getElementById("fxCanvas");
         const fxCtx = fxCanvas.getContext("2d");
         let coins = [];
@@ -637,84 +600,92 @@
         window.addEventListener('resize', resizeFxCanvas);
         resizeFxCanvas();
 
-        function triggerGoldCoins() {
+        function triggerGoldenLCoins() {
             coins = [];
-            const coinCount = 50;
-            for (let i = 0; i < coinCount; i++) {
+            const count = 90; // عدد عملات ممتاز وسريع
+            const startX = fxCanvas.width / 2;
+            const startY = fxCanvas.height / 2;
+
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 18 + 8; // انطلاق سريع وسلس
                 coins.push({
-                    x: fxCanvas.width / 2,
-                    y: fxCanvas.height / 2 + 50,
-                    vx: (Math.random() - 0.5) * 22,
-                    vy: (Math.random() - 0.8) * 24,
-                    size: Math.random() * 16 + 22, // حجم كبير للعملة الذهبية
-                    gravity: 0.65,
-                    rotation: Math.random() * 360,
-                    vRot: (Math.random() - 0.5) * 18,
-                    scaleY: 1,
-                    vScale: Math.random() * 0.1 + 0.05,
-                    alpha: 1
+                    x: startX,
+                    y: startY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 6,
+                    radius: Math.random() * 12 + 12,
+                    rotationX: Math.random() * Math.PI,
+                    rotSpeed: Math.random() * 0.25 + 0.15, // دوران 3D سريع
+                    alpha: 1,
+                    gravity: 0.45
                 });
             }
-            requestAnimationFrame(updateGoldCoins);
+            requestAnimationFrame(updateCoins);
         }
 
-        function updateGoldCoins() {
-            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-            let alive = false;
+        function drawLCoins(c) {
+            fxCtx.save();
+            fxCtx.globalAlpha = c.alpha;
+            fxCtx.translate(c.x, c.y);
+            
+            // محاكاة دوران العملة ثلاثي الأبعاد مقياس X
+            const scaleX = Math.cos(c.rotationX);
+            fxCtx.scale(scaleX, 1);
 
-            coins.forEach(c => {
+            // جسم العملة الذهبية المعدنية
+            fxCtx.beginPath();
+            fxCtx.arc(0, 0, c.radius, 0, Math.PI * 2);
+            let grad = fxCtx.createRadialGradient(0, 0, c.radius * 0.2, 0, 0, c.radius);
+            grad.addColorStop(0, '#fff5b0');
+            grad.addColorStop(0.5, '#ffd700');
+            grad.addColorStop(1, '#b8860b');
+            fxCtx.fillStyle = grad;
+            fxCtx.fill();
+
+            // إطار العملة
+            fxCtx.lineWidth = 2;
+            fxCtx.strokeStyle = '#fff7d6';
+            fxCtx.stroke();
+
+            // طباعة حرف L كبير وواضح بالوسط
+            if (Math.abs(scaleX) > 0.18) {
+                fxCtx.fillStyle = '#4a2c00';
+                fxCtx.font = `900 ${c.radius * 1.2}px Cairo, Arial`;
+                fxCtx.textAlign = 'center';
+                fxCtx.textBaseline = 'middle';
+                fxCtx.shadowColor = '#fff';
+                fxCtx.shadowBlur = 2;
+                fxCtx.fillText('L', 0, 1);
+            }
+
+            fxCtx.restore();
+        }
+
+        function updateCoins() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+            let activeCount = 0;
+
+            for (let i = 0; i < coins.length; i++) {
+                let c = coins[i];
                 c.x += c.vx;
                 c.y += c.vy;
                 c.vy += c.gravity;
-                c.rotation += c.vRot;
-                c.scaleY += c.vScale;
-                if (Math.abs(c.scaleY) > 1) c.vScale = -c.vScale;
-                c.alpha -= 0.012;
+                c.vx *= 0.98;
+                c.rotationX += c.rotSpeed;
+                c.alpha -= 0.012; // تلاشي تدريجي وسلس
 
                 if (c.alpha > 0) {
-                    alive = true;
-                    fxCtx.save();
-                    fxCtx.globalAlpha = Math.max(0, c.alpha);
-                    fxCtx.translate(c.x, c.y);
-                    fxCtx.rotate(c.rotation * Math.PI / 180);
-                    fxCtx.scale(1, c.scaleY);
-
-                    // رسم عملة ذهبية فاخرة بالكامل بلمعان ثلاثي الأبعاد
-                    fxCtx.beginPath();
-                    fxCtx.arc(0, 0, c.size, 0, 2 * Math.PI);
-                    let goldGrad = fxCtx.createRadialGradient(-c.size*0.3, -c.size*0.3, 2, 0, 0, c.size);
-                    goldGrad.addColorStop(0, '#ffffff');
-                    goldGrad.addColorStop(0.3, '#ffe600');
-                    goldGrad.addColorStop(0.8, '#d4af37');
-                    goldGrad.addColorStop(1, '#996515');
-                    fxCtx.fillStyle = goldGrad;
-                    fxCtx.fill();
-
-                    fxCtx.strokeStyle = '#fff5a3';
-                    fxCtx.lineWidth = 2.5;
-                    fxCtx.stroke();
-
-                    // نقش داخلي للعملة الذهبية
-                    fxCtx.beginPath();
-                    fxCtx.arc(0, 0, c.size * 0.7, 0, 2 * Math.PI);
-                    fxCtx.strokeStyle = 'rgba(153, 101, 21, 0.6)';
-                    fxCtx.lineWidth = 1.5;
-                    fxCtx.stroke();
-
-                    fxCtx.fillStyle = '#7a5200';
-                    fxCtx.font = `900 ${c.size * 0.8}px Cairo, Arial`;
-                    fxCtx.textAlign = 'center';
-                    fxCtx.textBaseline = 'middle';
-                    fxCtx.fillText('$', 0, 1);
-
-                    fxCtx.restore();
+                    activeCount++;
+                    drawLCoins(c);
                 }
-            });
+            }
 
-            if (alive) requestAnimationFrame(updateGoldCoins);
+            if (activeCount > 0) {
+                requestAnimationFrame(updateCoins);
+            }
         }
 
-        // تشغيل البداية
         drawWheel();
         fetchUserData();
     </script>
