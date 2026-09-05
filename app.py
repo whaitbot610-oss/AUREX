@@ -74,7 +74,7 @@ def get_db_connection():
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
-# --- تهيئة وتوحيد قاعدة البيانات دون تعديل الهيكلية الأصلية ---
+# --- تهيئة وتوحيد قاعدة البيانات ---
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -245,6 +245,7 @@ def init_db():
         ('welcome_bonus_enabled', '1'),
         ('referral_bonus', '1'),
         ('rtp_rate', '30.0'),
+        ('game_rtp_rates', '{}'),
         ('cashier_balance', '10000.0'),
         ('wheel_probabilities', json.dumps(default_wheel_probs))
     ]
@@ -305,6 +306,64 @@ def get_setting(cursor, key, default="0"):
 
 def set_setting(cursor, key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+def get_all_games_info(cursor):
+    """
+    اكتشاف جميع الألعاب المضافة في المجلدات تلقائياً
+    وجلب نسبة الربح (RTP) المخصصة لكل لعبة من الإعدادات
+    """
+    base_dirs = [
+        os.path.join(app.static_folder, 'games'),
+        os.path.join(app.template_folder, 'games'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'games')
+    ]
+    
+    game_rtps_raw = get_setting(cursor, 'game_rtp_rates', '{}')
+    try:
+        game_rtps = json.loads(game_rtps_raw)
+    except Exception:
+        game_rtps = {}
+        
+    global_rtp = float(get_setting(cursor, 'rtp_rate', '30.0'))
+    
+    games = []
+    seen = set()
+    
+    for bdir in base_dirs:
+        if os.path.exists(bdir):
+            for item in os.listdir(bdir):
+                item_path = os.path.join(bdir, item)
+                if os.path.isdir(item_path) and item not in seen:
+                    seen.add(item)
+                    game_title = item
+                    
+                    # قراءة اسم اللعبة من config.json إن وجد
+                    config_file = os.path.join(item_path, 'config.json')
+                    if os.path.exists(config_file):
+                        try:
+                            with open(config_file, 'r', encoding='utf-8') as f:
+                                cfg = json.load(f)
+                                game_title = cfg.get('title', cfg.get('name', item))
+                        except Exception:
+                            pass
+                    
+                    # نسبة الربح المخصصة أو العامة
+                    rtp_val = float(game_rtps.get(item, game_rtps.get(game_title, global_rtp)))
+                    
+                    games.append({
+                        'name': game_title,
+                        'folder': item,
+                        'url': f'/games/{item}/index.html',
+                        'rtp_rate': rtp_val
+                    })
+
+    if not games:
+        games = [
+            {'name': 'فواكة بالكيلو', 'folder': 'fruits', 'url': '/wheel', 'rtp_rate': float(game_rtps.get('fruits', global_rtp))},
+            {'name': 'AUREX Slots', 'folder': 'slots', 'url': '/', 'rtp_rate': float(game_rtps.get('slots', global_rtp))}
+        ]
+
+    return games
 
 def get_authenticated_user_id():
     user_id = session.get('user_id')
@@ -420,11 +479,18 @@ def admin_dashboard():
 
 @app.route('/games/<path:filename>')
 def serve_game_files(filename):
-    """تخديم ملفات أي لعبة تضاف في مجلد games تلقائياً"""
-    games_dir = os.path.join(app.root_path, 'static', 'games')
-    if not os.path.exists(games_dir):
-        games_dir = os.path.join(app.root_path, 'games')
-    return send_from_directory(games_dir, filename)
+    """تخديم ملفات أي لعبة تضاف في مجلد games تلقائياً بدون تعديل"""
+    games_dirs = [
+        os.path.join(app.root_path, 'static', 'games'),
+        os.path.join(app.root_path, 'games'),
+        os.path.join(app.root_path, 'templates', 'games')
+    ]
+    for g_dir in games_dirs:
+        target = os.path.join(g_dir, filename)
+        if os.path.exists(target):
+            return send_from_directory(g_dir, filename)
+            
+    return jsonify({'status': 'error', 'error': 'الملف المطلوب غير موجود'}), 404
 
 # --- المصادقة والحسابات ---
 @app.route('/api/auth/login', methods=['POST'])
@@ -741,32 +807,10 @@ def list_games_in_folder():
     """
     قراءة واستقبال كافة الألعاب الموجودة في مجلد ألعاب الموقع تلقائياً دون الحاجة لتعديل الكود مستقبلاً
     """
-    games = []
-    base_dirs = [
-        os.path.join(app.static_folder, 'games'),
-        os.path.join(app.template_folder, 'games'),
-        os.path.join(os.path.dirname(__file__), 'games')
-    ]
-    
-    seen = set()
-    for bdir in base_dirs:
-        if os.path.exists(bdir):
-            for item in os.listdir(bdir):
-                item_path = os.path.join(bdir, item)
-                if os.path.isdir(item_path) and item not in seen:
-                    seen.add(item)
-                    games.append({
-                        'name': item,
-                        'folder': item,
-                        'url': f'/games/{item}/index.html'
-                    })
-
-    if not games:
-        games = [
-            {'name': 'فواكة بالكيلو', 'folder': 'fruits', 'url': '/wheel'},
-            {'name': 'AUREX Slots', 'folder': 'slots', 'url': '/'}
-        ]
-
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    games = get_all_games_info(cursor)
+    conn.close()
     return jsonify({'status': 'success', 'games': games})
 
 @app.route('/api/play', methods=['POST'])
@@ -776,17 +820,17 @@ def start_game_round():
     """
     بدء اللعب في أي لعبة داخل الموقع:
     1. رصيد الموقع منفصل تماماً عن البوت.
-    2. يخصم رصيد اللعب فوراً من رصيد الموقع (حساب العميل).
-    3. التحكم في جميع خوارزميات ربح الألعاب المضافة حالياً ومستقبلياً بناءً على rtp_rate.
+    2. يخصم رصيد اللعب فوراً من رصيد الموقع.
+    3. التحكم الديناميكي في خوارزمية ربح اللعبة بناءً على نسبة RTP المخصصة لهذه اللعبة حصراً من لوحة الإدارة.
     4. بدون نقصان أو زيادة في الكاشيرة للعبة الموقع حسب الطلب.
-    5. عند الربح: لا يضاف الربح حتى تنتهي اللعبة من الدوران وتسحب عبر /api/game/finish.
+    5. عند الربح: يجهز الربح للسحب عبر /api/game/finish فور انتهاء دوران اللعبة.
     """
     telegram_id = get_authenticated_user_id()
     if not telegram_id:
         return jsonify({'status': 'error', 'error': 'تعذر التعرف على المعرف الخاص بك'}), 401
 
     data = get_req_data()
-    game_name = str(data.get('game_name', data.get('game', 'slot_game'))).strip()
+    game_identifier = str(data.get('game_name', data.get('game', data.get('folder', 'slot_game')))).strip()
     try:
         bet = float(data.get('bet_amount', data.get('bet', 0)))
     except (ValueError, TypeError):
@@ -807,11 +851,17 @@ def start_game_round():
     new_site_balance = (user['site_balance'] or 0.0) - bet
     cursor.execute("UPDATE users SET site_balance = ? WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (new_site_balance, telegram_id, str(telegram_id)))
 
-    # 2. تطبيق خوارزمية الربح الذكية لجميع الألعاب (RTP)
+    # 2. تحديد نسبة ربح اللعبة المحددة (Game-Specific RTP) أو العامة (Global RTP)
+    game_rtps_raw = get_setting(cursor, 'game_rtp_rates', '{}')
     try:
-        rtp_rate = float(get_setting(cursor, 'rtp_rate', '30.0'))
+        game_rtps = json.loads(game_rtps_raw)
     except Exception:
-        rtp_rate = 30.0
+        game_rtps = {}
+
+    global_rtp = float(get_setting(cursor, 'rtp_rate', '30.0'))
+    
+    # الحصول على RTP الخاص بهذه اللعبة بعينها
+    rtp_rate = float(game_rtps.get(game_identifier, global_rtp))
 
     win = (random.uniform(0, 100)) <= rtp_rate
     multiplier = float(data.get('multiplier', random.choice([1.5, 2.0, 3.0, 5.0])))
@@ -821,7 +871,7 @@ def start_game_round():
     cursor.execute("""
         INSERT INTO game_rounds (telegram_id, game_name, bet_amount, payout, status)
         VALUES (?, ?, ?, ?, 'pending')
-    """, (telegram_id, game_name, bet, payout if win else 0.0))
+    """, (telegram_id, game_identifier, bet, payout if win else 0.0))
     round_id = cursor.lastrowid
 
     conn.commit()
@@ -830,7 +880,8 @@ def start_game_round():
     return jsonify({
         'status': 'success',
         'round_id': round_id,
-        'game_name': game_name,
+        'game_name': game_identifier,
+        'rtp_applied': rtp_rate,
         'win': win,
         'payout': payout if win else 0.0,
         'site_balance_after_bet': new_site_balance,
@@ -881,6 +932,55 @@ def finish_game_round():
         'payout_added': payout,
         'new_site_balance': updated_user['site_balance'] if updated_user else 0.0,
         'message': 'تم انتهاء الدوران وإضافة الأرباح بنجاح'
+    })
+
+# ==================== إدارة إعدادات وتخصيص الألعاب من لوحة التحكم ====================
+
+@app.route('/api/admin/games/settings', methods=['GET', 'POST'])
+@app.route('/api/admin/games/config', methods=['GET', 'POST'])
+def admin_games_config():
+    """
+    نقطة تحكم كاملة بالألعاب المضافة حالياً ولاحقاً:
+    - عرض كافة الألعاب المكتشفة تلقائياً.
+    - تعديل نسبة الربح (RTP) الفعلية المخصصة لكل لعبة دون الحاجة للتعديل على الملف.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        data = get_req_data()
+        
+        # 1. تحديث قائمة ربح الألعاب المخصصة دفعة واحدة
+        if 'game_rtps' in data or 'game_rtp_rates' in data:
+            rtp_map = data.get('game_rtps') or data.get('game_rtp_rates')
+            if isinstance(rtp_map, dict):
+                set_setting(cursor, 'game_rtp_rates', json.dumps(rtp_map))
+                
+        # 2. أو تحديث لعبة فردية
+        elif ('game_folder' in data or 'game_name' in data) and 'rtp_rate' in data:
+            g_key = str(data.get('game_folder', data.get('game_name'))).strip()
+            try:
+                g_rtp = float(data['rtp_rate'])
+                current_map_raw = get_setting(cursor, 'game_rtp_rates', '{}')
+                try:
+                    current_map = json.loads(current_map_raw)
+                except Exception:
+                    current_map = {}
+                current_map[g_key] = g_rtp
+                set_setting(cursor, 'game_rtp_rates', json.dumps(current_map))
+            except (ValueError, TypeError):
+                pass
+
+        conn.commit()
+
+    games = get_all_games_info(cursor)
+    game_rtps_raw = get_setting(cursor, 'game_rtp_rates', '{}')
+    conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'games': games,
+        'game_rtp_rates': json.loads(game_rtps_raw) if game_rtps_raw else {}
     })
 
 # ==================== نظام عجلة الحظ (AUREX Lucky Wheel) ====================
@@ -1356,12 +1456,18 @@ def admin_settings():
             if isinstance(val, dict):
                 val = json.dumps(val)
             set_setting(cursor, 'wheel_probabilities', val)
+        if 'game_rtp_rates' in data or 'game_rtps' in data:
+            val = data.get('game_rtp_rates', data.get('game_rtps'))
+            if isinstance(val, dict):
+                val = json.dumps(val)
+            set_setting(cursor, 'game_rtp_rates', val)
         if 'maintenance' in data:
             set_setting(cursor, 'maintenance', data['maintenance'])
         
         conn.commit()
 
     rtp = get_setting(cursor, 'rtp_rate', '30.0')
+    game_rtp_rates = get_setting(cursor, 'game_rtp_rates', '{}')
     welcome = get_setting(cursor, 'welcome_bonus', '10.0')
     maint = get_setting(cursor, 'maintenance', 'off')
     wheel_p = get_setting(cursor, 'wheel_probabilities', '{}')
@@ -1370,6 +1476,7 @@ def admin_settings():
     return jsonify({
         'status': 'success',
         'rtp_rate': float(rtp),
+        'game_rtp_rates': json.loads(game_rtp_rates) if game_rtp_rates else {},
         'welcome_bonus': float(welcome),
         'maintenance': maint,
         'wheel_probabilities': json.loads(wheel_p) if wheel_p else {}
