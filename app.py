@@ -367,87 +367,17 @@ def get_all_games_info(cursor):
 
 def get_authenticated_user_id():
     user_id = session.get('user_id')
-    data = get_req_data()
-    
-    raw_tg = (
-        request.headers.get('X-Telegram-User-Id') or
-        data.get('telegram_id') or 
-        data.get('user_id') or 
-        request.args.get('telegram_id') or 
-        request.args.get('user_id')
-    )
-
-    if not raw_tg and request.referrer:
-        try:
-            parsed_ref = urllib.parse.urlparse(request.referrer)
-            ref_query = urllib.parse.parse_qs(parsed_ref.query)
-            if 'telegram_id' in ref_query:
-                raw_tg = ref_query['telegram_id'][0]
-            elif 'user_id' in ref_query:
-                raw_tg = ref_query['user_id'][0]
-            elif 'tgWebAppData' in ref_query or 'initData' in ref_query:
-                init_str = ref_query.get('tgWebAppData', ref_query.get('initData', ['']))[0]
-                if init_str:
-                    init_parsed = urllib.parse.parse_qs(init_str)
-                    if 'user' in init_parsed:
-                        u_json = json.loads(init_parsed['user'][0])
-                        raw_tg = u_json.get('id')
-        except Exception:
-            pass
-    
-    if not raw_tg:
-        init_data = (
-            request.headers.get('X-Telegram-Init-Data') or 
-            request.args.get('tgWebAppData') or 
-            request.args.get('initData') or 
-            data.get('initData')
-        )
-        if init_data:
-            try:
-                parsed = urllib.parse.parse_qs(init_data)
-                if 'user' in parsed:
-                    user_json = json.loads(parsed['user'][0])
-                    raw_tg = user_json.get('id')
-            except Exception:
-                pass
+    if not user_id:
+        return None
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    if raw_tg:
-        raw_str = str(raw_tg).strip()
-        user = cursor.execute("""
-            SELECT telegram_id FROM users 
-            WHERE telegram_id = ? 
-               OR CAST(telegram_id AS TEXT) = ? 
-               OR LOWER(site_username) = LOWER(?) 
-               OR LOWER(username) = LOWER(?)
-        """, (raw_str, raw_str, raw_str, raw_str)).fetchone()
-
-        if user:
-            found_id = user['telegram_id']
-            conn.close()
-            session['user_id'] = found_id
-            return found_id
-
-        if raw_str.isdigit():
-            tg_id = int(raw_str)
-            cursor.execute("""
-                INSERT OR IGNORE INTO users (telegram_id, username, site_username, site_password, bot_balance, site_balance, free_spins)
-                VALUES (?, ?, ?, ?, 0.0, 0.0, 0)
-            """, (tg_id, f"user_{tg_id}", f"user_{tg_id}", f"pass_{tg_id}"))
-            conn.commit()
-            conn.close()
-            session['user_id'] = tg_id
-            return tg_id
-
-    if user_id:
-        user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
-        conn.close()
-        if user:
-            return user['telegram_id']
-
+    user = cursor.execute("SELECT telegram_id FROM users WHERE telegram_id = ? OR CAST(telegram_id AS TEXT) = ?", (user_id, str(user_id))).fetchone()
     conn.close()
+
+    if user:
+        return user['telegram_id']
+
     return None
 
 @app.before_request
