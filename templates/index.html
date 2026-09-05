@@ -20,25 +20,28 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; user-select: none; }
         
-        body { 
-            background: url('https://i.ibb.co/V0ymNqTp/IMG.png') no-repeat center center fixed; 
-            background-size: cover; 
-            color: var(--text-main); 
+        html, body {
             min-height: 100vh;
+            background-color: #0a080c;
+            color: var(--text-main);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        body { 
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            overflow-x: hidden;
         }
 
-        /* Top Bar matching image */
+        /* Top Bar */
         .top-bar { 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            padding: 10px 14px; 
-            background: rgba(10, 8, 12, 0.85); 
-            backdrop-filter: blur(8px);
+            padding: 8px 14px; 
+            background: rgba(10, 8, 12, 0.88); 
+            backdrop-filter: blur(12px);
             border-bottom: 2px solid #b38728; 
             position: sticky; 
             top: 0; 
@@ -55,22 +58,32 @@
             padding: 4px 10px;
             border-radius: 20px;
             cursor: pointer;
+            transition: all 0.2s;
+        }
+        .user-profile-badge:hover {
+            border-color: var(--accent-gold-bright);
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
         }
         .user-profile-badge .icon {
             background: var(--accent-gold);
             color: #000;
             border-radius: 50%;
-            width: 26px;
-            height: 26px;
+            width: 24px;
+            height: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: bold;
         }
-        .username-text { font-size: 0.85rem; font-weight: bold; color: #fff; }
+        .username-text { font-size: 0.82rem; font-weight: bold; color: #fff; }
 
-        .balances-container { display: flex; align-items: center; gap: 6px; }
+        /* Balances Container - مخفي افتراضياً ولا يظهر إلا عند تسجيل الدخول */
+        .balances-container { 
+            display: none; 
+            align-items: center; 
+            gap: 6px; 
+        }
         .balance-box {
             background: rgba(15, 10, 5, 0.9);
             border: 1px solid #d4af37;
@@ -87,62 +100,72 @@
             background: #bf953f;
             color: #000;
             font-size: 0.65rem;
-            padding: 1px 5px;
+            padding: 1px 6px;
             border-radius: 10px;
             font-weight: 900;
         }
 
-        /* Center branding area spacer */
-        .main-hero {
-            flex: 1;
+        /* Main Hero Section allowing vertical scrolling to view full image */
+        .main-hero-section {
+            width: 100%;
+            min-height: 125vh; /* يسمح بالتمرير لأسفل لرؤية كامل خلفية الصورة */
+            background: url('https://i.ibb.co/V0ymNqTp/IMG.png') no-repeat center top;
+            background-size: cover;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
-            text-align: center;
-            padding: 20px;
+            padding-bottom: 90px;
         }
 
-        /* Luxury Frame Buttons Container at Bottom */
+        /* Compact & Beautiful Bottom Actions Nav Bar */
         .bottom-actions {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             display: flex;
-            justify-content: space-around;
+            justify-content: center;
             align-items: center;
-            padding: 15px 10px 25px 10px;
-            background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0));
-            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(10, 8, 12, 0.92);
+            backdrop-filter: blur(15px);
+            border-top: 1.5px solid rgba(212, 175, 55, 0.5);
+            box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.9), 0 -1px 0 rgba(212, 175, 55, 0.4);
+            gap: 10px;
+            z-index: 99;
         }
 
         .gold-frame-btn {
-            background: linear-gradient(180deg, #2b1f14 0%, #0d0805 100%);
-            border: 2px solid #d4af37;
-            border-radius: 14px;
-            padding: 10px 8px;
+            background: linear-gradient(180deg, #23180f 0%, #0d0805 100%);
+            border: 1px solid #d4af37;
+            border-radius: 10px;
+            padding: 6px 10px;
             flex: 1;
-            max-width: 130px;
+            max-width: 120px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.25), inset 0 0 8px rgba(212, 175, 55, 0.3);
-            transition: transform 0.2s, box-shadow 0.2s;
-            position: relative;
+            box-shadow: 0 2px 8px rgba(212, 175, 55, 0.2);
+            transition: all 0.2s ease-in-out;
         }
-        .gold-frame-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.4);
+        .gold-frame-btn:active, .gold-frame-btn:hover {
+            transform: translateY(-2px);
+            border-color: #ffd700;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.35);
         }
-        .gold-frame-btn .btn-icon { font-size: 1.5rem; margin-bottom: 4px; }
-        .gold-frame-btn .btn-title { font-size: 0.78rem; font-weight: 800; color: #fff; text-shadow: 0 0 5px rgba(0,0,0,0.8); text-align: center; }
-        .gold-frame-btn .btn-sub { font-size: 0.6rem; color: var(--accent-gold); margin-top: 1px; text-align: center; }
+        .gold-frame-btn .btn-icon { font-size: 1.1rem; margin-bottom: 2px; }
+        .gold-frame-btn .btn-title { font-size: 0.72rem; font-weight: 800; color: #fff; text-align: center; }
+        .gold-frame-btn .btn-sub { font-size: 0.55rem; color: var(--accent-gold); margin-top: 1px; text-align: center; }
 
-        /* Modal styling */
+        /* Modals */
         .modal { 
             display: none; 
             position: fixed; 
             inset: 0; 
-            background: rgba(0,0,0,0.9); 
+            background: rgba(0,0,0,0.85); 
             backdrop-filter: blur(8px); 
             z-index: 200; 
             justify-content: center; 
@@ -152,11 +175,11 @@
         .modal-content { 
             background: #11141c; 
             width: 100%; 
-            max-width: 500px; 
-            border-radius: 18px; 
-            padding: 22px; 
-            border: 2px solid #bf953f; 
-            max-height: 88vh; 
+            max-width: 480px; 
+            border-radius: 16px; 
+            padding: 20px; 
+            border: 1.5px solid #bf953f; 
+            max-height: 85vh; 
             overflow-y: auto; 
             box-shadow: 0 10px 35px rgba(212, 175, 55, 0.3); 
         }
@@ -164,61 +187,41 @@
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            margin-bottom: 16px; 
+            margin-bottom: 14px; 
             font-weight: bold; 
             border-bottom: 1px solid #bf953f; 
-            padding-bottom: 10px; 
-            font-size: 1.1rem; 
+            padding-bottom: 8px; 
+            font-size: 1rem; 
             color: var(--accent-gold); 
         }
-        .close-btn { cursor: pointer; font-size: 1.3rem; color: var(--text-muted); }
+        .close-btn { cursor: pointer; font-size: 1.2rem; color: var(--text-muted); }
 
         input[type="number"], input[type="text"], input[type="password"], select { 
-            padding: 11px 14px; 
-            border-radius: 10px; 
+            padding: 10px 12px; 
+            border-radius: 8px; 
             border: 1px solid #3b2a1a; 
             background: var(--bg-input); 
             color: #fff; 
-            font-size: 0.9rem; 
+            font-size: 0.85rem; 
             width: 100%; 
             outline: none; 
         }
         input:focus { border-color: var(--accent-gold); }
 
         .btn-action { 
-            padding: 12px; 
+            padding: 10px; 
             background: linear-gradient(135deg, #bf953f, #aa771c); 
             color: #000; 
             border: none; 
-            border-radius: 10px; 
-            font-size: 0.95rem; 
+            border-radius: 8px; 
+            font-size: 0.88rem; 
             font-weight: bold; 
             cursor: pointer; 
             width: 100%; 
         }
         .btn-danger { background: linear-gradient(135deg, #dc2626, #991b1b); color: white; }
 
-        /* Games Grid inside Modal */
-        .games-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 12px;
-            margin-top: 10px;
-        }
-        .game-card-item {
-            background: rgba(20, 25, 35, 0.8);
-            border: 1px solid #d4af37;
-            border-radius: 12px;
-            padding: 12px;
-            text-align: center;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .game-card-item:hover { transform: scale(1.03); }
-        .game-card-item img { width: 100%; height: 80px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
-        .game-card-item .title { font-size: 0.82rem; font-weight: bold; color: #fff; }
-
-        /* Admin UI preserve */
+        /* Admin UI */
         .admin-nav { display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; }
         .admin-nav-btn { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
         .admin-nav-btn.active { background: var(--accent-gold); color: #000; font-weight: bold; }
@@ -238,34 +241,31 @@
             <span class="username-text" id="topUsername">تسجيل الدخول</span>
         </div>
 
-        <div class="balances-container">
-            <!-- Site Balance -->
+        <!-- خيار الرصيد مقيد بوجود تسجيل دخول فقط -->
+        <div class="balances-container" id="balancesContainer">
             <div class="balance-box" title="رصيد الموقع">
-                <span class="tag">NSP</span>
+                <span class="tag">nsp</span>
                 <span id="siteBalance">0.00</span>
             </div>
-            <!-- Bot Balance -->
-            <div class="balance-box" title="رصيد البوت">
-                <span class="tag" style="background:#3b82f6; color:#fff;">🤖</span>
-                <span id="botBalance">0.00</span>
-            </div>
-            <!-- Admin Button -->
+            <!-- زر لوحة تحكم المدير -->
             <button class="btn-action" id="adminBtn" style="display:none; padding:4px 8px; font-size:0.75rem; width:auto; background:var(--accent-gold);" onclick="openAdminModal()">⚙️</button>
         </div>
     </header>
 
-    <!-- Main Hero Spacer for Background graphic visibility -->
-    <main class="main-hero">
-        <!-- Content background artwork visible here -->
+    <!-- Main Hero Section allowing vertical scrolling to reveal complete picture -->
+    <main class="main-hero-section">
+        <div style="padding-top: 20px; text-align: center; color: rgba(255,255,255,0.7); font-size: 0.8rem;">
+            <!-- مساحة رئيسية للتمرير نحو الأسفل لمشاهدة كافة تفاصيل الصورة -->
+        </div>
     </main>
 
-    <!-- Bottom Actions matching attached image -->
+    <!-- Bottom Navigation Bar (تصغير الحجم وتجميل المظهر) -->
     <footer class="bottom-actions">
-        <!-- Button 1: Game List -->
-        <div class="gold-frame-btn" onclick="openGamesModal()">
+        <!-- Button 1: Game Page Link -->
+        <div class="gold-frame-btn" onclick="goToGamesPage()">
             <div class="btn-icon">🎮</div>
             <div class="btn-title">الألعاب</div>
-            <div class="btn-sub">أكثر الألعاب لعباً</div>
+            <div class="btn-sub">كل الألعاب المتاحة</div>
         </div>
 
         <!-- Button 2: Account -->
@@ -283,7 +283,7 @@
         </div>
     </footer>
 
-    <!-- Modal 1: Login Modal (Registration Removed) -->
+    <!-- Modal 1: Login Modal -->
     <div class="modal" id="authModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -329,8 +329,7 @@
                 
                 <h5 style="color: #fff; margin-top: 5px;">سجل النشاطات والأرصدة</h5>
                 <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-size: 0.85rem;">
-                    <p>🌐 رصيد الموقع: <span id="accSiteBal" style="color:var(--accent-gold);">0.00</span></p>
-                    <p>🤖 رصيد البوت: <span id="accBotBal" style="color:#3b82f6;">0.00</span></p>
+                    <p>🌐 رصيد الموقع: <span id="accSiteBal" style="color:var(--accent-gold);">0.00</span> nsp</p>
                 </div>
 
                 <button class="btn-action btn-danger" onclick="logout()">تسجيل الخروج 🚪</button>
@@ -338,20 +337,7 @@
         </div>
     </div>
 
-    <!-- Modal 4: Games List (Dynamic Auto-Loader) -->
-    <div class="modal" id="gamesModal">
-        <div class="modal-content" style="max-width: 600px;">
-            <div class="modal-header">
-                <span>🎮 قائمة الألعاب المتاحة</span>
-                <span class="close-btn" onclick="closeModal('gamesModal')">✕</span>
-            </div>
-            <div class="games-grid" id="dynamicGamesList">
-                <p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">جاري تحميل الألعاب من المجلد...</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal 5: Complete Preserved Admin Dashboard -->
+    <!-- Modal 4: Preserved Admin Dashboard -->
     <div class="modal" id="adminModal">
         <div class="modal-content" style="max-width: 650px;">
             <div class="modal-header">
@@ -375,12 +361,11 @@
                                 <th>ID</th>
                                 <th>اسم الحساب</th>
                                 <th>كلمة المرور</th>
-                                <th>رصيد البوت</th>
-                                <th>رصيد الموقع</th>
+                                <th>رصيد الموقع (nsp)</th>
                             </tr>
                         </thead>
                         <tbody id="adminUsersList">
-                            <tr><td colspan="5">جاري التحميل...</td></tr>
+                            <tr><td colspan="4">جاري التحميل...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -389,12 +374,11 @@
                     <h5 style="color: var(--accent-gold); margin-bottom: 8px;">تعديل رصيد لاعب</h5>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
                         <input type="number" id="admUserTgId" placeholder="ID اللاعب">
-                        <input type="number" id="admUserAmount" placeholder="المبلغ">
+                        <input type="number" id="admUserAmount" placeholder="المبلغ بـ nsp">
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                         <select id="admBalanceType">
                             <option value="site">رصيد الموقع</option>
-                            <option value="bot">رصيد البوت</option>
                         </select>
                         <select id="admActionType">
                             <option value="add">إضافة (+)</option>
@@ -411,7 +395,7 @@
                     <h5 style="color: #10b981; margin-bottom: 8px;">شحن كاشيرة البوتات</h5>
                     <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                         <input type="number" id="admCashierBotId" value="1" placeholder="Bot ID">
-                        <input type="number" id="admCashierAmount" placeholder="المبلغ">
+                        <input type="number" id="admCashierAmount" placeholder="المبلغ بـ nsp">
                     </div>
                     <button class="btn-action" style="background:#10b981; color:#fff;" onclick="adminAddCashier()">إضافة رصيد للكاشيرة 💸</button>
                 </div>
@@ -421,7 +405,7 @@
                     <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
                         <input type="text" id="admCodeText" placeholder="الكود (فارغ للتوليد التلقائي)">
                         <div style="display: flex; gap: 6px;">
-                            <input type="number" id="admCodeAmount" placeholder="قيمة الكود">
+                            <input type="number" id="admCodeAmount" placeholder="قيمة الكود bـ nsp">
                             <input type="number" id="admCodeUses" value="1" placeholder="مرات الاستخدام">
                         </div>
                     </div>
@@ -439,7 +423,7 @@
                             <input type="number" id="admRtpRate" placeholder="30.0">
                         </div>
                         <div>
-                            <label style="font-size: 0.75rem;">قيمة البونص الترحيبي:</label>
+                            <label style="font-size: 0.75rem;">قيمة البونص الترحيبي (nsp):</label>
                             <input type="number" id="admWelcomeBonus" placeholder="10.0">
                         </div>
                         <div>
@@ -479,23 +463,31 @@
         }
 
         function updateUI() {
+            const balancesContainer = document.getElementById('balancesContainer');
             if (currentUser) {
                 document.getElementById('siteBalance').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2);
-                document.getElementById('botBalance').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2);
                 document.getElementById('topUsername').innerText = currentUser.site_username || currentUser.username || 'عميل';
                 
                 document.getElementById('accUsername').innerText = "المستخدم: " + (currentUser.site_username || currentUser.username || '--');
                 document.getElementById('accTgId').innerText = "معرف التلغرام: " + (currentUser.telegram_id || '--');
                 document.getElementById('accSiteBal').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2);
-                document.getElementById('accBotBal').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2);
 
                 document.getElementById('adminBtn').style.display = currentUser.is_admin ? 'inline-block' : 'none';
+                
+                // إظهار خيار الرصيد عند تسجيل الدخول فقط
+                balancesContainer.style.display = 'flex';
             } else {
                 document.getElementById('siteBalance').innerText = '0.00';
-                document.getElementById('botBalance').innerText = '0.00';
                 document.getElementById('topUsername').innerText = 'تسجيل الدخول';
                 document.getElementById('adminBtn').style.display = 'none';
+                
+                // إخفاء خيار الرصيد بالكامل عند عدم تسجيل الدخول
+                balancesContainer.style.display = 'none';
             }
+        }
+
+        function goToGamesPage() {
+            window.location.href = 'games.html';
         }
 
         // Login Logic
@@ -549,38 +541,6 @@
             } catch (e) { alert('خطأ في السيرفر'); }
         }
 
-        // --- Dynamic Games Loader (Reads from folder/API without modifying code) ---
-        async function openGamesModal() {
-            openModal('gamesModal');
-            const container = document.getElementById('dynamicGamesList');
-            container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">جاري جلب الألعاب...</p>';
-
-            try {
-                // Requests endpoint that returns list of files/folders in games directory
-                const res = await fetch('/api/games');
-                if (res.ok) {
-                    const games = await res.json(); // Expected format: [{ title: 'Game Name', path: '/games/game1', icon: '/games/game1/icon.png' }]
-                    if (games.length === 0) {
-                        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">لا توجد ألعاب حالياً في المجلد.</p>';
-                        return;
-                    }
-                    container.innerHTML = '';
-                    games.forEach(g => {
-                        container.innerHTML += `
-                            <div class="game-card-item" onclick="window.location.href='${g.path}'">
-                                <img src="${g.icon || 'https://via.placeholder.com/100?text=Game'}" alt="${g.title}">
-                                <div class="title">${g.title}</div>
-                            </div>
-                        `;
-                    });
-                } else {
-                    container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">سيتم إظهار الألعاب تلقائياً فور رفع المجلدات.</p>';
-                }
-            } catch (e) {
-                container.innerHTML = '<p style="color: var(--text-muted); text-align: center; grid-column: 1/-1;">لا توجد ألعاب مضافة بعد.</p>';
-            }
-        }
-
         function openAccountOrAuth() {
             if (currentUser) {
                 openModal('accountModal');
@@ -622,8 +582,7 @@
                             <td>${u.telegram_id}</td>
                             <td>${u.site_username || u.username || '-'}</td>
                             <td><span style="color:#f43f5e; font-weight:bold;">${u.site_password || 'بدون'}</span></td>
-                            <td>${parseFloat(u.bot_balance || 0).toFixed(2)}</td>
-                            <td>${parseFloat(u.site_balance || 0).toFixed(2)}</td>
+                            <td>${parseFloat(u.site_balance || 0).toFixed(2)} nsp</td>
                         </tr>
                     `;
                 });
@@ -668,7 +627,7 @@
                     body: JSON.stringify({ bot_id, amount })
                 });
                 const data = await res.json();
-                if (res.ok) alert(`تمت إضافة الرصيد للكاشيرة! المتاح الان: ${data.new_balance}`);
+                if (res.ok) alert(`تمت إضافة الرصيد للكاشيرة! المتاح الان: ${data.new_balance} nsp`);
                 else alert(data.error);
             } catch (e) { alert('خطأ في الاتصال'); }
         }
@@ -714,7 +673,7 @@
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-        // Start initialization
+        // Initialization
         loadUserAccount();
     </script>
 </body>
