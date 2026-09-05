@@ -471,6 +471,12 @@ def home():
 def wheel_page():
     return render_template('wheel.html')
 
+# التعديل الجديد: مسار عرض صفحة الألعاب
+@app.route('/games')
+@app.route('/games.html')
+def games_page():
+    return render_template('games.html')
+
 @app.route('/admin')
 def admin_dashboard():
     if not session.get('is_admin'):
