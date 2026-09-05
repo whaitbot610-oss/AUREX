@@ -9,7 +9,7 @@
         :root {
             --accent-gold: #f59e0b;
             --accent-gold-bright: #ffd700;
-            --bg-card: rgba(18, 22, 32, 0.92);
+            --bg-card: rgba(18, 22, 32, 0.85);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
         }
@@ -20,9 +20,11 @@
             font-family: 'Segoe UI', system-ui, sans-serif; 
             user-select: none; 
         }
+        
         body { 
-            background: #0a080c url('https://i.ibb.co/v6DT6MVH/file-00000000149c82468460bc807f362071.png') no-repeat center center fixed; 
-            background-size: cover; 
+            background: #0a080c url('https://i.ibb.co/v6DT6MVH/file-00000000149c82468460bc807f362071.png') no-repeat top center; 
+            background-size: 100% auto; 
+            background-attachment: fixed;
             color: var(--text-main); 
             min-height: 100vh; 
             padding-bottom: 40px; 
@@ -34,61 +36,89 @@
             justify-content: space-between; 
             align-items: center;
             padding: 12px 16px; 
-            background: rgba(10, 8, 12, 0.90);
-            border-bottom: 2px solid #b38728; 
+            background: rgba(10, 8, 12, 0.75);
+            border-bottom: 1px solid rgba(212, 175, 55, 0.4); 
             position: sticky; 
             top: 0; 
             z-index: 100;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(8px);
         }
+        
         .btn-back { 
-            background: #1a202c; 
+            background: rgba(26, 32, 44, 0.8); 
             color: var(--accent-gold); 
             border: 1px solid #b38728; 
-            padding: 6px 12px; 
+            padding: 6px 14px; 
             border-radius: 8px; 
             cursor: pointer; 
             font-weight: bold; 
+            font-size: 0.85rem;
+            transition: all 0.2s;
         }
+        .btn-back:active { transform: scale(0.95); }
+
         .balance-box { 
-            background: rgba(15, 10, 5, 0.9); 
+            background: rgba(15, 10, 5, 0.85); 
             border: 1px solid #d4af37; 
             padding: 6px 12px; 
             border-radius: 12px; 
             font-weight: bold; 
             color: #fff; 
             font-size: 0.85rem; 
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
         }
 
         .container { 
             padding: 16px; 
-            max-width: 900px; 
+            max-width: 800px; 
             margin: 0 auto; 
         }
+
+        /* تصميم فاخر لعنوان الألعاب */
         .section-title { 
-            font-size: 1.3rem; 
-            color: var(--accent-gold); 
-            margin-bottom: 20px; 
+            font-size: 1.4rem; 
+            font-weight: 900; 
             text-align: center; 
-            font-weight: bold; 
-            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            margin: 20px 0 25px 0; 
+            background: linear-gradient(135deg, #ffe082 0%, #d4af37 50%, #aa771c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0px 4px 15px rgba(212, 175, 55, 0.4);
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 50px 20px;
+            background: rgba(18, 22, 32, 0.6);
+            border: 1px dashed rgba(212, 175, 55, 0.3);
+            border-radius: 16px;
+            margin-top: 10px;
+            backdrop-filter: blur(5px);
+        }
+        .empty-state-icon { font-size: 2.5rem; margin-bottom: 10px; }
+        .empty-state-text { color: var(--text-muted); font-size: 0.95rem; }
 
         .games-grid { 
             display: grid; 
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); 
-            gap: 16px; 
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); 
+            gap: 14px; 
         }
+
         .game-card {
             background: var(--bg-card); 
-            border: 1px solid #3b2a1a; 
+            border: 1px solid rgba(212, 175, 55, 0.3); 
             border-radius: 12px;
             overflow: hidden; 
             display: flex; 
             flex-direction: column; 
             align-items: center;
             transition: transform 0.2s, border-color 0.2s; 
-            position: relative;
             backdrop-filter: blur(4px);
         }
         .game-card:hover { 
@@ -97,7 +127,7 @@
         }
         .game-img { 
             width: 100%; 
-            height: 120px; 
+            height: 110px; 
             object-fit: cover; 
             background: #1a202c; 
         }
@@ -107,7 +137,7 @@
             text-align: center; 
         }
         .game-title { 
-            font-size: 0.9rem; 
+            font-size: 0.85rem; 
             font-weight: bold; 
             color: #fff; 
             margin-bottom: 8px; 
@@ -135,9 +165,16 @@
     </header>
 
     <div class="container">
-        <div class="section-title">🎰 الألعاب المتاحة</div>
+        <div class="section-title">
+            <span>✨</span> الألعاب المتاحة <span>✨</span>
+        </div>
+
         <div class="games-grid" id="gamesGrid">
-            <p style="text-align:center; grid-column: 1/-1; color: var(--text-muted); padding: 20px;">جاري تحميل الألعاب...</p>
+            <!-- يظهر هذا العنصر تلقائياً عند عدم وجود ألعاب -->
+            <div class="empty-state">
+                <div class="empty-state-icon">🎰</div>
+                <div class="empty-state-text">لا توجد ألعاب مضافة حالياً<br><small style="opacity: 0.7;">سيتم إضافة الألعاب قريباً</small></div>
+            </div>
         </div>
     </div>
 
@@ -158,13 +195,25 @@
                 const res = await fetch('/api/games/list');
                 const data = await res.json();
                 
-                if (!data.games || data.games.length === 0) {
-                    grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 30px;">لا توجد ألعاب مضافة حالياً</p>';
+                // تصفية وحذف الألعاب الافتراضية القديمة تلقائياً
+                const filteredGames = (data.games || []).filter(g => 
+                    g.name !== "فواكة بالكيلو" && 
+                    g.name !== "AUREX Slots" &&
+                    !g.folder?.includes("slots")
+                );
+
+                if (filteredGames.length === 0) {
+                    grid.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🎰</div>
+                            <div class="empty-state-text">لا توجد ألعاب مضافة حالياً<br><small style="opacity: 0.7;">سيتم إضافة الألعاب قريباً</small></div>
+                        </div>
+                    `;
                     return;
                 }
 
                 grid.innerHTML = '';
-                for (const game of data.games) {
+                for (const game of filteredGames) {
                     let title = game.name;
                     let imgUrl = `/games/${game.folder}/cover.png`;
 
@@ -189,7 +238,7 @@
                     grid.appendChild(card);
                 }
             } catch (e) {
-                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color:#ef4444; padding: 20px;">خطأ في تحميل الألعاب</p>';
+                // في حالة عدم الاتصال بالخادم يظل الإشعار بالنظافة ظاهراً
             }
         }
 
