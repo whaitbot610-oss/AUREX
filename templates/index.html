@@ -26,7 +26,6 @@
             user-select: none; 
         }
         
-        /* جعل الصفحة قابلة للتمرير لعرض الصورة كاملة بشكل طبيعي وغير مقرب */
         html, body {
             min-height: 100vh;
             background-color: #0a080c;
@@ -34,16 +33,16 @@
 
         body { 
             background: #0a080c url('https://i.ibb.co/V0ymNqTp/IMG.png') no-repeat top center; 
-            background-size: 100% auto; /* تظهر الصورة كاملة بعرض الشاشة دون تقريب أو قص */
+            background-size: 100% auto; 
             color: var(--text-main); 
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            overflow-y: auto; /* السماح بالنزول والتحريك لأسفل لرؤية كامل الصورة */
+            overflow-y: auto; 
             overflow-x: hidden;
         }
 
-        /* Top Bar matching image */
+        /* Top Bar */
         .top-bar { 
             display: flex; 
             justify-content: space-between; 
@@ -82,9 +81,9 @@
         }
         .username-text { font-size: 0.8rem; font-weight: bold; color: #fff; }
 
-        /* الأرصدة مخفية افتراضياً ولا تظهر إلا بعد تسجيل الدخول */
+        /* الأرصدة مخفية افتراضياً ولا تظهر إلا بعد تسجيل الدخول اليدوي */
         .balances-container { 
-            display: none; /* مخفي لحين تسجيل الدخول */
+            display: none; 
             align-items: center; 
             gap: 6px; 
         }
@@ -109,10 +108,9 @@
             font-weight: 900;
         }
 
-        /* مساحة العرض الرئيسية التي تسمح بظهور خلفية الصورة والتمرير */
         .main-hero {
             flex: 1;
-            min-height: 70vh; /* يعطي مساحة لرؤية الصورة بالكامل عند النزول */
+            min-height: 70vh;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -121,7 +119,7 @@
             padding: 20px;
         }
 
-        /* تصميم القائمة السفلية بشكل مصغر وأنيق */
+        /* Bottom Menu */
         .bottom-actions {
             display: flex;
             justify-content: center;
@@ -137,7 +135,7 @@
 
         .gold-frame-btn {
             background: linear-gradient(180deg, #2b1f14 0%, #0d0805 100%);
-            border: 1.5 solid #d4af37;
+            border: 1.5px solid #d4af37;
             border-radius: 10px;
             padding: 6px 4px;
             flex: 1;
@@ -239,45 +237,35 @@
             <span class="username-text" id="topUsername">تسجيل الدخول</span>
         </div>
 
-        <!-- الأرصدة (لا تظهر إلا بعد تسجيل الدخول اليدوي) -->
+        <!-- رصيد الموقع فقط (مخفي تماماً ولا يظهر إلا بعد تسجيل الدخول اليدوي) -->
         <div class="balances-container" id="balancesContainer">
-            <!-- Site Balance in NSP -->
             <div class="balance-box" title="رصيد الموقع">
                 <span class="tag">NSP</span>
                 <span id="siteBalance">0.00</span>
-            </div>
-            <!-- Bot Balance in NSP -->
-            <div class="balance-box" title="رصيد البوت">
-                <span class="tag" style="background:#3b82f6; color:#fff;">🤖 NSP</span>
-                <span id="botBalance">0.00</span>
             </div>
             <!-- Admin Button -->
             <button class="btn-action" id="adminBtn" style="display:none; padding:3px 6px; font-size:0.7rem; width:auto; background:var(--accent-gold);" onclick="openAdminModal()">⚙️</button>
         </div>
     </header>
 
-    <!-- Main Hero Spacer for Background graphic visibility and scrolling -->
+    <!-- Main Hero Spacer -->
     <main class="main-hero">
-        <!-- تظهر خلفية الصورة والنصوص هنا بكامل وضوحها ويمكن التمرير لأسفل -->
     </main>
 
-    <!-- Bottom Actions Menu (مصغرة ومجملة) -->
+    <!-- Bottom Actions Menu -->
     <footer class="bottom-actions">
-        <!-- Button 1: Game Page Transfer -->
         <div class="gold-frame-btn" onclick="goToGamesPage()">
             <div class="btn-icon">🎮</div>
             <div class="btn-title">الألعاب</div>
             <div class="btn-sub">قائمة الألعاب</div>
         </div>
 
-        <!-- Button 2: Account -->
         <div class="gold-frame-btn" onclick="openAccountOrAuth()">
             <div class="btn-icon">👤</div>
             <div class="btn-title">حسابي</div>
             <div class="btn-sub">الملف الشخصي</div>
         </div>
 
-        <!-- Button 3: Gift Code -->
         <div class="gold-frame-btn" onclick="openGiftModal()">
             <div class="btn-icon">🎁</div>
             <div class="btn-title">كود هدية</div>
@@ -285,7 +273,7 @@
         </div>
     </footer>
 
-    <!-- Modal 1: Login Modal (Handled Manually via Bot Account) -->
+    <!-- Modal 1: Login Modal (يدوي فقط عبر بيانات حساب البوت) -->
     <div class="modal" id="authModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -317,7 +305,7 @@
         </div>
     </div>
 
-    <!-- Modal 3: Account & Activity Log -->
+    <!-- Modal 3: Account Modal -->
     <div class="modal" id="accountModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -330,10 +318,9 @@
                     <p style="font-size: 0.75rem; color: var(--text-muted);" id="accTgId">معرف التلغرام: --</p>
                 </div>
                 
-                <h5 style="color: #fff; margin-top: 4px;">الأرصدة المسجلة (NSP)</h5>
+                <h5 style="color: #fff; margin-top: 4px;">رصيد حساب الموقع</h5>
                 <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-size: 0.8rem;">
                     <p>🌐 رصيد الموقع: <span id="accSiteBal" style="color:var(--accent-gold);">0.00 NSP</span></p>
-                    <p>🤖 رصيد البوت: <span id="accBotBal" style="color:#3b82f6;">0.00 NSP</span></p>
                 </div>
 
                 <button class="btn-action btn-danger" onclick="logout()">تسجيل الخروج 🚪</button>
@@ -453,7 +440,7 @@
 
         let currentUser = null;
 
-        // إلغاء التسجيل التلقائي، وجلب حالة الجلسة اليدوية فقط
+        // جلب جلسة الحساب المسجل يدويًا فقط (بدون أي تسجيل دخول تلقائي عبر Telegram ID)
         async function loadUserAccount() {
             try {
                 const res = await fetch('/api/user/account');
@@ -469,29 +456,26 @@
             }
         }
 
-        // تحديث الواجهة: عدم إظهار الرصيد إلا إذا قام بالدخول اليدوي
+        // تحديث الواجهة: عدم إظهار رصيد الموقع إلا إذا قام بالدخول اليدوي
         function updateUI() {
             const balancesContainer = document.getElementById('balancesContainer');
             
             if (currentUser) {
-                // إظهار صندوق الأرصدة بعد تسجيل الدخول اليدوي
+                // إظهار صندوق رصيد الموقع بعد تسجيل الدخول اليدوي
                 balancesContainer.style.display = 'flex';
                 
                 document.getElementById('siteBalance').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2);
-                document.getElementById('botBalance').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2);
                 document.getElementById('topUsername').innerText = currentUser.site_username || currentUser.username || 'عميل';
                 
                 document.getElementById('accUsername').innerText = "المستخدم: " + (currentUser.site_username || currentUser.username || '--');
                 document.getElementById('accTgId').innerText = "معرف التلغرام: " + (currentUser.telegram_id || '--');
                 document.getElementById('accSiteBal').innerText = parseFloat(currentUser.site_balance || 0).toFixed(2) + " NSP";
-                document.getElementById('accBotBal').innerText = parseFloat(currentUser.bot_balance || 0).toFixed(2) + " NSP";
 
                 document.getElementById('adminBtn').style.display = currentUser.is_admin ? 'inline-block' : 'none';
             } else {
-                // إخفاء الأرصدة تماماً لحين تسجيل الدخول
+                // إخفاء رصيد الموقع والزر تماماً لحين تسجيل الدخول
                 balancesContainer.style.display = 'none';
                 document.getElementById('siteBalance').innerText = '0.00';
-                document.getElementById('botBalance').innerText = '0.00';
                 document.getElementById('topUsername').innerText = 'تسجيل الدخول';
                 document.getElementById('adminBtn').style.display = 'none';
             }
@@ -526,7 +510,6 @@
             closeModal('accountModal');
         }
 
-        // الانقال لصفحة الألعاب عند الضغط على زر الألعاب
         function goToGamesPage() {
             window.location.href = 'games.html';
         }
@@ -544,7 +527,6 @@
             openModal('giftModal');
         }
 
-        // شحن كود الهدية
         async function useGiftCode() {
             if (!currentUser) return alert('يرجى تسجيل الدخول أولاً');
             const code = document.getElementById('giftCodeInput').value.trim();
