@@ -1,1 +1,12 @@
-
+📁 مشروعك الرئيسي/
+│
+├── 📁 games/
+│   └── 📁 bull_fortune/
+│       ├── info.json       <-- (ملف معلومات اللعبة لصفحة الألعاب)
+│       └── index.html      <-- (ملف اللعبة الكامل مع الواجهات والخوارزمية)
+│
+├── app (12).py
+├── templates/
+│   ├── index (5).html
+│   └── games (1).html
+└── database.db
