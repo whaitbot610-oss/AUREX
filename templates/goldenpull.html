@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Golden Pull - AUREX CASINO</title>
+  <style>
+    :root {
+      --accent-gold: #f59e0b;
+      --accent-gold-bright: #ffd700;
+      --bg-card: #0a080c;
+      --text-main: #f8fafc;
+      --gold-border: linear-gradient(135deg, #bf953f, #fcf6ba, #b38728, #fbf5b7, #aa771c);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
+    body { background-color: var(--bg-card); color: var(--text-main); min-height: 100vh; overflow-x: hidden; }
+
+    /* Top Bar */
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 15px; background: rgba(0,0,0,0.85); border-bottom: 1.5px solid #b38728;
+      position: sticky; top: 0; z-index: 100; backdrop-filter: blur(8px);
+    }
+    .game-title {
+      font-size: 1.2rem; font-weight: 900; background: linear-gradient(135deg, #ffe082 0%, #d4af37 50%, #aa771c 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 0.5px;
+    }
+    .balances-group { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: bold; }
+    .balance-box { display: flex; align-items: center; gap: 4px; color: #fff; background: rgba(15, 10, 5, 0.9); border: 1px solid #d4af37; padding: 3px 8px; border-radius: 12px; }
+    .balance-box .tag { font-size: 0.65rem; color: var(--accent-gold); font-weight: 900; }
+    .deposit-btn { background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+    .deposit-btn:active { transform: scale(0.95); }
+
+    /* Main Content */
+    .container { padding: 15px; padding-bottom: 50px; }
+    .winning-banner { text-align: center; font-size: 1.8rem; font-weight: 900; color: #ffd700; margin-top: -10px; margin-bottom: 10px; text-shadow: 0 0 10px rgba(255,215,0,0.6); }
+
+    /* Reels and Pay Table */
+    .reels-pay-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+    .pay-card { background: rgba(0,0,0,0.5); border: 1px solid rgba(212, 175, 55, 0.2); border-radius: 12px; padding: 10px; text-align: center; }
+    .symbol-img { width: 60px; height: 60px; object-fit: contain; margin-bottom: 8px; }
+    .pay-table { font-size: 0.75rem; color: #fff; line-height: 1.4; }
+    .pay-row { display: flex; justify-content: center; gap: 6px; }
+    .pay-x { color: var(--accent-gold); }
+    .pay-value { color: #fff; font-weight: bold; }
+
+    /* Other Symbols */
+    .symbol-row-other { display: flex; justify-content: center; gap: 15px; margin-top: 20px; border-top: 1px solid #333; padding-top: 15px; }
+    .symbol-card { text-align: center; }
+    .symbol-img-small { width: 45px; height: 45px; object-fit: contain; }
+
+    /* Banners */
+    .expand-wild-banner, .buy-bonus-banner, .winning-lines-banner { text-align: center; font-size: 1.6rem; font-weight: 900; color: #ffd700; margin: 20px 0; text-shadow: 0 0 10px rgba(255,215,0,0.6); }
+
+    /* Buy Bonus Section */
+    .bonus-buy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .bonus-card {
+      background: rgba(0,0,0,0.5); border: 1.5px solid #d4af37; border-radius: 12px; padding: 12px; text-align: center; cursor: pointer;
+      box-shadow: 0 0 10px rgba(212, 175, 55, 0.1);
+    }
+    .bonus-card:hover, .bonus-card.active { border-color: #ffd700; box-shadow: 0 0 15px rgba(255,215,0,0.3); }
+    .bonus-title { font-size: 0.85rem; font-weight: 900; color: #ffd700; margin-bottom: 6px; }
+    .bonus-price { font-size: 0.75rem; color: #fff; margin-bottom: 6px; }
+    .bonus-desc { font-size: 0.7rem; color: #aaa; line-height: 1.3; }
+
+    .wild-details, .free-spins-details { font-size: 0.7rem; color: #aaa; line-height: 1.3; text-align: center; margin: 15px 0; max-width: 300px; margin-left: auto; margin-right: auto; }
+
+    /* Winning Lines Grid */
+    .winning-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .line-card { background: rgba(0,0,0,0.5); border: 1px solid rgba(212, 175, 55, 0.2); border-radius: 8px; padding: 6px; text-align: center; font-size: 0.8rem; font-weight: bold; color: var(--accent-gold); }
+
+    /* Scatter Grid */
+    .scatter-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 20px; margin-bottom: 20px; }
+    .scatter-card { text-align: center; background: rgba(0,0,0,0.5); border: 1px solid rgba(212, 175, 55, 0.2); border-radius: 12px; padding: 10px; }
+    .scatter-img { width: 50px; height: 50px; object-fit: contain; margin-bottom: 6px; }
+    .scatter-info-title { font-size: 0.8rem; font-weight: bold; color: var(--accent-gold); margin-bottom: 4px; }
+    .scatter-info-desc { font-size: 0.65rem; color: #aaa; line-height: 1.3; }
+
+    /* Control Bar */
+    .control-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 15px; background: rgba(0,0,0,0.9); border-top: 1px solid rgba(212, 175, 55, 0.3);
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; backdrop-filter: blur(5px);
+    }
+    .icon-btn { font-size: 1.2rem; color: var(--accent-gold); cursor: pointer; padding: 4px; }
+    .play-btn {
+      background: linear-gradient(135deg, #bf953f, #aa771c); color: #000; border: none;
+      padding: 6px 20px; border-radius: 8px; font-weight: 900; font-size: 0.85rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="top-bar">
+    <div class="game-title">GOLDEN PULL</div>
+    <div class="balances-group">
+      <div class="balance-box"><span class="tag">NSP</span><span id="siteBalance">0.00</span></div>
+      <div class="balance-box"><span class="tag" style="color:#f43f5e">♦</span><span>0.00</span></div>
+      <div class="balance-box"><span class="tag" style="color:#dc2626">♥</span><span>0.00</span></div>
+      <div class="balance-box"><span class="tag" style="color:#94a3b8">♠</span><span>0.00</span></div>
+      <a href="/" class="deposit-btn">Deposit</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="winning-banner">x20,000</div>
+
+    <!-- Symbols & Paytable -->
+    <div class="reels-pay-grid">
+      <div class="pay-card">
+        <img src="images/symbol-7.png" class="symbol-img" onerror="this.src='https://via.placeholder.com/60?text=7'">
+        <div class="pay-table">
+          <div class="pay-row"><span>5x</span> <span class="pay-x">x</span> <span class="pay-value">3,000 NSP</span></div>
+          <div class="pay-row"><span>4x</span> <span class="pay-x">x</span> <span class="pay-value">150 NSP</span></div>
+          <div class="pay-row"><span>3x</span> <span class="pay-x">x</span> <span class="pay-value">30 NSP</span></div>
+          <div class="pay-row"><span>2x</span> <span class="pay-x">x</span> <span class="pay-value">6 NSP</span></div>
+        </div>
+      </div>
+      <div class="pay-card">
+        <img src="images/symbol-grape.png" class="symbol-img" onerror="this.src='https://via.placeholder.com/60?text=Grap'">
+        <div class="pay-table">
+          <div class="pay-row"><span>5x</span> <span class="pay-x">x</span> <span class="pay-value">420 NSP</span></div>
+          <div class="pay-row"><span>4x</span> <span class="pay-x">x</span> <span class="pay-value">72 NSP</span></div>
+          <div class="pay-row"><span>3x</span> <span class="pay-x">x</span> <span class="pay-value">24 NSP</span></div>
+        </div>
+      </div>
+      <div class="pay-card">
+        <img src="images/symbol-watermelon.png" class="symbol-img" onerror="this.src='https://via.placeholder.com/60?text=Water'">
+        <div class="pay-table">
+          <div class="pay-row"><span>5x</span> <span class="pay-x">x</span> <span class="pay-value">420 NSP</span></div>
+          <div class="pay-row"><span>4x</span> <span class="pay-x">x</span> <span class="pay-value">72 NSP</span></div>
+          <div class="pay-row"><span>3x</span> <span class="pay-x">x</span> <span class="pay-value">24 NSP</span></div>
+        </div>
+      </div>
+      <div class="pay-card">
+        <img src="images/symbol-bell.png" class="symbol-img" onerror="this.src='https://via.placeholder.com/60?text=Bell'">
+        <div class="pay-table">
+          <div class="pay-row"><span>5x</span> <span class="pay-x">x</span> <span class="pay-value">120 NSP</span></div>
+          <div class="pay-row"><span>4x</span> <span class="pay-x">x</span> <span class="pay-value">24 NSP</span></div>
+          <div class="pay-row"><span>3x</span> <span class="pay-x">x</span> <span class="pay-value">12 NSP</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Small Symbols -->
+    <div class="symbol-row-other">
+      <div class="symbol-card"><img src="images/symbol-cherry.png" class="symbol-img-small" onerror="this.src='https://via.placeholder.com/45?text=Cher'"></div>
+      <div class="symbol-card"><img src="images/symbol-orange.png" class="symbol-img-small" onerror="this.src='https://via.placeholder.com/45?text=Oran'"></div>
+      <div class="symbol-card"><img src="images/symbol-lemon.png" class="symbol-img-small" onerror="this.src='https://via.placeholder.com/45?text=Lemo'"></div>
+      <div class="symbol-card"><img src="images/symbol-plum.png" class="symbol-img-small" onerror="this.src='https://via.placeholder.com/45?text=Plum'"></div>
+    </div>
+
+    <div class="winning-lines-banner">Winning Lines</div>
+    <div class="winning-grid">
+      <div class="line-card">1</div> <div class="line-card">2</div> <div class="line-card">3</div>
+      <div class="line-card">4</div> <div class="line-card">5</div> <div class="line-card">6</div>
+      <div class="line-card">7</div> <div class="line-card">8</div> <div class="line-card">9</div>
+      <div class="line-card">10</div>
+    </div>
+
+    <div class="expand-wild-banner">Wild</div>
+    <div class="symbol-row-other" style="border: none;">
+      <div class="symbol-card">
+          <img src="images/symbol-wild-glasses.png" class="symbol-img-small" onerror="this.src='https://via.placeholder.com/45?text=Wild'">
+      </div>
+    </div>
+    <div class="expand-wild-banner" style="font-size: 1.4rem;">x10 x5 x3 x2</div>
+    <div class="wild-details">An Expanding Wild substitutes for all symbols on the same reel except for Scatters.</div>
+
+    <!-- Buy Bonus Grid -->
+    <div class="buy-bonus-banner">Buy Bonus</div>
+    <div class="bonus-buy-grid">
+      <div class="bonus-card" onclick="selectBonus(75, 'Single Wild')">
+        <div class="bonus-title">Single Wild</div>
+        <div class="bonus-price">Price - 75 x Bet</div>
+        <div class="bonus-desc">One Guaranteed Wild per Free Spin.</div>
+      </div>
+      <div class="bonus-card" onclick="selectBonus(175, 'Double Wild')">
+        <div class="bonus-title">Double Wild</div>
+        <div class="bonus-price">Price - 175 x Bet</div>
+        <div class="bonus-desc">Two Guaranteed Wilds per Free Spin.</div>
+      </div>
+      <div class="bonus-card" onclick="selectBonus(500, 'Triple Wild')">
+        <div class="bonus-title">Triple Wild</div>
+        <div class="bonus-price">Price - 500 x Bet</div>
+        <div class="bonus-desc">Three Guaranteed Wilds per Free Spin.</div>
+      </div>
+      <div class="bonus-card" onclick="selectBonus(150, 'Random Wild')">
+        <div class="bonus-title">Random Wild</div>
+        <div class="bonus-price">Price - 150 x Bet</div>
+        <div class="bonus-desc">Up to 4 Wilds picked randomly for 5 Free Spins.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <footer class="control-bar">
+    <div class="icon-btn" onclick="location.href='/'">🏠</div>
+    <div class="icon-btn">ⓘ</div>
+    <button class="play-btn" id="playBtn" onclick="playGame()">PLAY</button>
+    <div class="icon-btn">🕒</div>
+    <div class="icon-btn">?</div>
+  </footer>
+
+  <script>
+    const game_name = 'goldenpull';
+    let bet_amount = 1.0;
+    let current_balance = 0.0;
+
+    async function updateBalances() {
+      try {
+        const res = await fetch('/api/user/account');
+        if (res.ok) {
+          const data = await res.json();
+          current_balance = parseFloat(data.site_balance || 0);
+          document.getElementById('siteBalance').innerText = current_balance.toFixed(2);
+        }
+      } catch (e) {}
+    }
+
+    async function playGame() {
+      if (current_balance < bet_amount) {
+        return alert('رصيد الموقع غير كافٍ للعب');
+      }
+
+      try {
+        const playBtn = document.getElementById('playBtn');
+        playBtn.disabled = true;
+        playBtn.innerText = 'WAIT...';
+
+        const res = await fetch('/api/game/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ game_name, bet_amount })
+        });
+
+        const data = await res.json();
+        playBtn.disabled = false;
+        playBtn.innerText = 'PLAY';
+
+        if (!res.ok) return alert(data.error);
+
+        current_balance = data.site_balance_after_bet;
+        document.getElementById('siteBalance').innerText = current_balance.toFixed(2);
+
+        setTimeout(async () => {
+          if (data.win) {
+            alert(`مبروك! لقد فزت بـ ${data.payout} NSP!`);
+            await finishGameRound(data.round_id);
+          } else {
+            alert('حظ أوفر، لم تكسب شيئاً');
+            await finishGameRound(data.round_id);
+          }
+        }, 800);
+
+      } catch (err) { alert('خطأ في الاتصال بالخادم'); }
+    }
+
+    async function finishGameRound(round_id) {
+      try {
+        const res = await fetch('/api/game/finish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ round_id })
+        });
+        const data = await res.json();
+        if (res.ok && data.payout_added > 0) {
+          current_balance = data.new_site_balance;
+          document.getElementById('siteBalance').innerText = current_balance.toFixed(2);
+        }
+      } catch (e) {}
+    }
+
+    function selectBonus(multiplier, type) {
+      alert(`تم اختيار بونص ${type} بسعر ${bet_amount * multiplier} NSP. قم بالضغط على PLAY للشراء.`);
+    }
+
+    updateBalances();
+  </script>
+</body>
+</html>
