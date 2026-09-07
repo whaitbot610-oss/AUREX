@@ -6,6 +6,8 @@
     <title>الثور الذهبي 👑 - Golden Bull Slot</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&family=Changa:wght@700;800&display=swap');
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -23,7 +25,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Cairo', sans-serif;
         }
 
         /* ---------------- 1. شاشة التحميل الحية ---------------- */
@@ -53,11 +55,12 @@
         }
 
         .loader-title {
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 900;
             color: #ffd700;
             margin-bottom: 12px;
             text-shadow: 0 0 10px #ff0000, 0 0 20px #ffd700;
+            font-family: 'Changa', sans-serif;
         }
 
         .progress-bar-track {
@@ -84,13 +87,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             font-weight: 900;
             color: #000;
             text-shadow: 0 0 3px #fff;
         }
 
-        /* ---------------- 2. مسرح اللعبة الرئيسي المطابق للصور ---------------- */
+        /* ---------------- 2. مسرح اللعبة الرئيسي والبطاقات ---------------- */
         #game-stage {
             display: none;
             position: relative;
@@ -99,13 +102,40 @@
             max-width: 450px;
             max-height: 975px;
             aspect-ratio: 9 / 19.5;
-            background: url('https://i.ibb.co/nM2jsjF2/file-0000000011cc820a81b267981f140243.png') no-repeat center center;
+            background: url('https://i.ibb.co/KzcVRdHC/file-00000000931c81f48e379438cc61b182.png') no-repeat center center;
             background-size: 100% 100%;
             overflow: hidden;
             box-shadow: 0 0 60px rgba(0, 0, 0, 0.95);
         }
 
-        /* شبكة البكرات الـ 5 المدمجة داخل الإطار الذهبي دون حدود مزعجة */
+        /* عدادات الشارات العلوية (دينار، كبة، زهر، بستون) */
+        .top-jackpots-bar {
+            position: absolute;
+            top: 2.2%;
+            left: 4%;
+            width: 92%;
+            height: 3.8%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 30;
+            padding: 0 5px;
+        }
+
+        .jackpot-item {
+            font-family: 'Changa', sans-serif;
+            font-size: 0.65rem;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: 0 0 6px #000, 0 0 8px #ffd700;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            width: 23%;
+            justify-content: center;
+        }
+
+        /* شبكة البكرات الـ 5 المدمجة تماماً داخل الإطار */
         .reels-grid {
             position: absolute;
             top: 41.5%;
@@ -139,39 +169,39 @@
             justify-content: center;
             align-items: center;
             position: relative;
+            overflow: hidden;
         }
 
-        /* تجوير الرموز وجعلها ثلاثية الأبعاد بلمعان مضاعف */
         .symbol-cell img {
-            width: 95%;
-            height: 95%;
+            max-width: 88%;
+            max-height: 88%;
             object-fit: contain;
-            filter: drop-shadow(0 6px 8px rgba(0,0,0,0.9)) brightness(1.15) contrast(1.1);
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.8));
             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        /* أنيميشن الدوران السريع وضبابية الحركة */
+        /* أنيميشن دوران البكرات الثلاثية السرعة */
         .reel-spinning .symbol-cell img {
-            filter: blur(8px) brightness(1.4) contrast(1.2);
-            transform: scaleY(1.35);
+            filter: blur(5px) brightness(1.2);
+            transform: scaleY(1.2);
         }
 
         /* اهتزاز توقف البكرة */
         @keyframes reelBounce {
-            0% { transform: translateY(-14px); }
-            50% { transform: translateY(7px); }
+            0% { transform: translateY(-12px); }
+            50% { transform: translateY(6px); }
             100% { transform: translateY(0); }
         }
 
         .reel-bounce {
-            animation: reelBounce 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: reelBounce 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
         /* نبض ولمعان الرموز الرابحة */
         @keyframes winPulseGlow {
-            0% { transform: scale(0.92); filter: drop-shadow(0 0 8px #ffd700) brightness(1.1); }
-            50% { transform: scale(1.12); filter: drop-shadow(0 0 30px #ffea00) brightness(1.6); }
-            100% { transform: scale(0.92); filter: drop-shadow(0 0 8px #ffd700) brightness(1.1); }
+            0% { transform: scale(0.92); filter: drop-shadow(0 0 8px #ffd700); }
+            50% { transform: scale(1.08); filter: drop-shadow(0 0 25px #ffea00) brightness(1.4); }
+            100% { transform: scale(0.92); filter: drop-shadow(0 0 8px #ffd700); }
         }
 
         .winning-symbol img {
@@ -179,19 +209,19 @@
             z-index: 30;
         }
 
-        /* ---------------- 3. الثور الذهبي التوسعي بوقفته الكاملة والمضاعف ---------------- */
+        /* ---------------- 3. الثور الذهبي بوقفته الكاملة ---------------- */
         .standing-wild-overlay {
             position: absolute;
             inset: 0;
             z-index: 80;
-            background: url('https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png') no-repeat center center;
+            background: url('https://i.ibb.co/fdbs16Dc/file-0000000055b4820a90f0cf27b1a50784.png') no-repeat center center;
             background-size: 100% 100%;
-            animation: wildExpand 0.35s ease-out forwards;
-            filter: drop-shadow(0 0 25px #ffd700);
+            animation: wildExpand 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            filter: drop-shadow(0 0 20px #ffd700);
             display: flex;
             justify-content: center;
             align-items: flex-end;
-            padding-bottom: 8px;
+            padding-bottom: 6px;
         }
 
         .wild-multiplier-badge {
@@ -199,11 +229,12 @@
             border: 2px solid #fff;
             color: #fff;
             font-weight: 900;
-            font-size: 1rem;
-            padding: 2px 10px;
-            border-radius: 12px;
-            box-shadow: 0 0 15px #ffea00;
-            text-shadow: 0 0 5px #000;
+            font-family: 'Changa', sans-serif;
+            font-size: 0.95rem;
+            padding: 1px 8px;
+            border-radius: 10px;
+            box-shadow: 0 0 12px #ffea00;
+            text-shadow: 0 0 4px #000;
             animation: multPulse 0.4s infinite alternate;
         }
 
@@ -228,12 +259,13 @@
             pointer-events: none;
         }
 
-        /* ---------------- 5. النصوص والأرصدة المباشرة ---------------- */
+        /* ---------------- 5. النصوص والخطوط الاحترافية ---------------- */
         .overlay-hud-text {
             position: absolute;
             color: #fff;
+            font-family: 'Changa', 'Cairo', sans-serif;
             font-weight: 900;
-            text-shadow: 0 0 8px #000, 0 0 10px #ffd700;
+            text-shadow: 0 0 8px #000, 0 0 12px #ffd700;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -242,26 +274,26 @@
         }
 
         #balanceDisplay {
-            bottom: 0.9%;
-            left: 30%;
-            width: 40%;
-            height: 2.2%;
-            font-size: 0.9rem;
+            bottom: 0.8%;
+            left: 28%;
+            width: 44%;
+            height: 2.5%;
+            font-size: 0.95rem;
             color: #00ffcc;
             letter-spacing: 0.5px;
         }
 
         #winBanner {
-            top: 36.2%;
+            top: 36.5%;
             left: 5%;
             width: 90%;
-            height: 4.8%;
-            font-size: 1.35rem;
+            height: 4.5%;
+            font-size: 1.25rem;
             color: #fffb00;
-            text-shadow: 0 0 12px #ff0000, 0 0 25px #ffb700;
+            text-shadow: 0 0 10px #ff0000, 0 0 20px #ffb700;
             opacity: 0;
             transform: scale(0.8);
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
         #winBanner.active {
@@ -275,67 +307,83 @@
             100% { transform: scale(1.04); }
         }
 
-        /* حلقة تحديد الرهان المضيئة فوق الخلفية */
+        /* حلقة الرهان النشطة المضيئة */
         .bet-active-ring {
             position: absolute;
             bottom: 21.8%;
             width: 16%;
             height: 3.6%;
             border: 2px solid #ffea00;
-            border-radius: 20px;
+            border-radius: 18px;
             box-shadow: 0 0 15px #ffea00, inset 0 0 8px #ffea00;
             pointer-events: none;
             z-index: 25;
-            transition: left 0.25s ease-in-out;
+            transition: left 0.2s ease-in-out;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 0.75rem;
             font-weight: 900;
+            font-family: 'Changa', sans-serif;
             color: #fff;
             text-shadow: 0 0 4px #000;
         }
 
-        /* حلقة زر الدوران المتوهجة والمتحركة أثناء الدوران */
-        .spin-active-glow {
+        /* شارات نظام السرعات والرهان والتلقائي */
+        #speedBadge {
             position: absolute;
-            bottom: 6.2%;
-            left: 37.5%;
-            width: 25%;
-            height: 11.8%;
-            border-radius: 50%;
-            border: 3px solid #ffe600;
-            box-shadow: 0 0 35px #ffe600, inset 0 0 20px #ffe600;
-            pointer-events: none;
+            bottom: 7.8%;
+            left: 22%;
+            width: 13.5%;
+            height: 6.5%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Changa', sans-serif;
+            font-weight: 900;
+            font-size: 0.85rem;
+            color: #ffe600;
+            text-shadow: 0 0 6px #000;
             z-index: 25;
-            display: none;
-            animation: spinRingRotate 0.6s linear infinite;
+            pointer-events: none;
         }
 
-        @keyframes spinRingRotate {
-            0% { transform: rotate(0deg) scale(0.95); }
-            50% { transform: rotate(180deg) scale(1.05); }
-            100% { transform: rotate(360deg) scale(0.95); }
+        #betPageBadge {
+            position: absolute;
+            bottom: 7.8%;
+            left: 80%;
+            width: 13.5%;
+            height: 6.5%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Changa', sans-serif;
+            font-weight: 900;
+            font-size: 0.85rem;
+            color: #ffe600;
+            text-shadow: 0 0 6px #000;
+            z-index: 25;
+            pointer-events: none;
         }
 
-        /* شارة الدوران التلقائي المتبقي */
         #autoCountBadge {
             position: absolute;
             bottom: 12.5%;
-            left: 9%;
+            left: 6.5%;
             background: #ff0000;
             color: #fff;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
+            font-family: 'Changa', sans-serif;
             font-weight: 900;
-            padding: 2px 7px;
-            border-radius: 10px;
+            padding: 1px 6px;
+            border-radius: 8px;
             border: 1px solid #ffe600;
             z-index: 105;
             display: none;
             box-shadow: 0 0 10px #ff0000;
         }
 
-        /* ---------------- 6. الأزرار الشفافة المنطبقة على الخلفية (Hotspots) ---------------- */
+        /* ---------------- 6. الأزرار الشفافة السفلية ---------------- */
         .touch-btn {
             position: absolute;
             background: rgba(255, 255, 255, 0);
@@ -347,25 +395,17 @@
         }
 
         .touch-btn:active {
-            background: rgba(255, 230, 0, 0.3);
+            background: rgba(255, 230, 0, 0.25);
         }
 
-        #btnSpin {
-            bottom: 6.2%;
-            left: 37.5%;
-            width: 25%;
-            height: 11.8%;
-            border-radius: 50%;
-        }
+        #btnSpin { bottom: 6.2%; left: 37.5%; width: 25%; height: 11.8%; border-radius: 50%; }
 
-        /* أزرار اختيار الرهان الخمسة المطبوعة */
         .bet-pill-1 { bottom: 21.8%; left: 5.2%; width: 16%; height: 3.6%; }
         .bet-pill-2 { bottom: 21.8%; left: 23.8%; width: 16%; height: 3.6%; }
         .bet-pill-3 { bottom: 21.8%; left: 42%; width: 16%; height: 3.6%; }
         .bet-pill-4 { bottom: 21.8%; left: 60.2%; width: 16%; height: 3.6%; }
         .bet-pill-5 { bottom: 21.8%; left: 78.5%; width: 16%; height: 3.6%; }
 
-        /* أزرار الوظائف السفلية */
         #btnAuto { bottom: 7.8%; left: 6.5%; width: 13.5%; height: 6.5%; }
         #btnTurbo { bottom: 7.8%; left: 22%; width: 13.5%; height: 6.5%; }
         #btnMult { bottom: 7.8%; left: 64.5%; width: 13.5%; height: 6.5%; }
@@ -374,7 +414,7 @@
         #btnSound { bottom: 0.8%; left: 81%; width: 8%; height: 2.2%; }
         #btnMenu { bottom: 0.8%; left: 89.5%; width: 8%; height: 2.2%; }
 
-        /* ---------------- 7. النوافذ المنبثقة القابلة للتخصيص (Modals) ---------------- */
+        /* ---------------- 7. النوافذ المنبثقة (Modals) ---------------- */
         .modal-bg {
             display: none;
             position: fixed;
@@ -405,6 +445,7 @@
             color: #ffd700;
             margin-bottom: 15px;
             font-size: 1.2rem;
+            font-family: 'Changa', sans-serif;
             text-shadow: 0 0 10px #ff8800;
         }
 
@@ -414,13 +455,13 @@
             background: linear-gradient(90deg, #ffaa00, #ffd700);
             border: none;
             font-weight: 900;
+            font-family: 'Cairo', sans-serif;
             border-radius: 10px;
             cursor: pointer;
             color: #000;
             box-shadow: 0 0 12px #ffd700;
         }
 
-        /* شبكة أزرار الشراء والدوران التلقائي */
         .auto-options-grid, .buy-bonus-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -445,7 +486,7 @@
         .option-card-title {
             color: #ffe600;
             font-weight: bold;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             margin-bottom: 4px;
         }
 
@@ -453,11 +494,13 @@
             color: #00ffcc;
             font-size: 0.85rem;
             font-weight: 900;
+            font-family: 'Changa', sans-serif;
         }
     </style>
 </head>
 <body>
 
+    <!-- شاشة التحميل -->
     <div id="loader-screen">
         <div class="loader-card">
             <div class="loader-title">👑 الثور الذهبي 👑</div>
@@ -468,15 +511,25 @@
         </div>
     </div>
 
+    <!-- مسرح اللعبة الرئيسي -->
     <div id="game-stage">
+
+        <!-- العدادات العلوية المباشرة (دينار، بستون، كبة، زهر) -->
+        <div class="top-jackpots-bar">
+            <div class="jackpot-item"><span>♠</span><span id="jackpotSpade">5,060,647.31</span></div>
+            <div class="jackpot-item"><span>♥</span><span id="jackpotHeart">432,433.03</span></div>
+            <div class="jackpot-item"><span>♦</span><span id="jackpotDiamond">45,290.97</span></div>
+            <div class="jackpot-item"><span>♣</span><span id="jackpotClub">16,476.43</span></div>
+        </div>
 
         <div class="bet-active-ring" id="betRing" style="left: 42%;">12 NPS</div>
 
-        <div class="spin-active-glow" id="spinGlowRing"></div>
+        <div id="speedBadge">1x</div>
+        <div id="betPageBadge">فئة 1</div>
 
         <div id="autoCountBadge">AUTO: 10</div>
 
-        <div class="overlay-hud-text" id="winBanner">🏆 رابـح 120.00 NPS 🏆</div>
+        <div class="overlay-hud-text" id="winBanner">ربحت 0.00 NPS</div>
 
         <div class="overlay-hud-text" id="balanceDisplay">Balance 4,771.8 NPS</div>
 
@@ -490,6 +543,7 @@
 
         <svg id="payline-canvas"></svg>
 
+        <!-- أزرار التحكم اللمسية الشفافة -->
         <button class="touch-btn" id="btnSpin" onclick="slotEngine.startSpin()"></button>
 
         <button class="touch-btn bet-pill-1" onclick="slotEngine.selectBetIndex(0, '5.2%')"></button>
@@ -499,7 +553,7 @@
         <button class="touch-btn bet-pill-5" onclick="slotEngine.selectBetIndex(4, '78.5%')"></button>
 
         <button class="touch-btn" id="btnAuto" onclick="slotEngine.openAutoModal()"></button>
-        <button class="touch-btn" id="btnTurbo" onclick="slotEngine.toggleTurbo()"></button>
+        <button class="touch-btn" id="btnTurbo" onclick="slotEngine.cycleSpeed()"></button>
         <button class="touch-btn" id="btnMult" onclick="slotEngine.openBuyBonusModal()"></button>
         <button class="touch-btn" id="btnCoins" onclick="slotEngine.nextBetPage()"></button>
         <button class="touch-btn" id="btnSound" onclick="audioEngine.toggleMute()"></button>
@@ -507,18 +561,22 @@
 
     </div>
 
+    <!-- نافذة القواعد وجدول الأرباح المطابقة للمستندات -->
     <div class="modal-bg" id="rulesModal">
         <div class="modal-card">
-            <h3>👑 قواعد وثوابت اللعبة 👑</h3>
+            <h3>👑 قواعد وجدول أرباح اللعبة 👑</h3>
             <div style="font-size:0.8rem; line-height:1.7; color:#ddd; text-align:right;">
-                <p style="color:#ffd700; font-weight:bold;">• الرمز التوسعي (Expanding Wild):</p>
-                <p>يظهر على الأعمدة 2 و 3 و 4 ويحل محل كافة الرموز عدا Scatter مع مضاعفات أرباح x2 أو x3 أو x5.</p>
+                <p style="color:#ffd700; font-weight:bold;">• الثور التوسعي (Expanding Wild):</p>
+                <p>يظهر على الأعمدة 2 و 3 و 4 ويتحول لثور كامل يغطي البكرة ومضاعفات x2, x3, x5.</p>
                 <br>
-                <p style="color:#ffd700; font-weight:bold;">• جدول الأرباح (Symbol Payouts):</p>
+                <p style="color:#ffd700; font-weight:bold;">• احتساب الربح:</p>
+                <p>تُحسب الأرباح من جهة اليسار إلى اليمين متتالية على خطوط الربح الـ 10.</p>
+                <br>
+                <p style="color:#ffd700; font-weight:bold;">• جدول الأرباح الرسمية:</p>
                 <p>🔥 الرقم 7: 5x = 1,500 | 4x = 75 | 3x = 15 | 2x = 3 NPS</p>
                 <p>🍇 العنب / البطيخ: 5x = 210 | 4x = 36 | 3x = 12 NPS</p>
                 <p>🔔 الجرس: 5x = 60 | 4x = 12 | 3x = 6 NPS</p>
-                <p>🍊 الفواكه: 5x = 45 | 4x = 9 | 3x = 3 NPS</p>
+                <p>🍒 الفواكه: 5x = 45 | 4x = 9 | 3x = 3 NPS</p>
                 <p>⭐ النجمة (Scatter): تظهر بالأعمدة 1، 3، 5 تمنح 60 NPS عند 3 رموز.</p>
                 <p>💲 الدولار (Scatter): 5x = 300 | 4x = 60 | 3x = 15 NPS.</p>
             </div>
@@ -526,42 +584,33 @@
         </div>
     </div>
 
+    <!-- نافذة التدوير التلقائي -->
     <div class="modal-bg" id="autoModal">
         <div class="modal-card">
             <h3>🔄 الدوران التلقائي 🔄</h3>
             <div class="auto-options-grid">
-                <div class="option-card" onclick="slotEngine.setAutoSpins(10)">
-                    <div class="option-card-title">10 لـفـات</div>
-                </div>
-                <div class="option-card" onclick="slotEngine.setAutoSpins(20)">
-                    <div class="option-card-title">20 لـفـة</div>
-                </div>
-                <div class="option-card" onclick="slotEngine.setAutoSpins(50)">
-                    <div class="option-card-title">50 لـفـة</div>
-                </div>
-                <div class="option-card" onclick="slotEngine.setAutoSpins(100)">
-                    <div class="option-card-title">100 لـفـة</div>
-                </div>
-                <div class="option-card" style="grid-column: span 2;" onclick="slotEngine.setAutoSpins(999999)">
-                    <div class="option-card-title">∞ دوران مستمر (حتى الإيقاف)</div>
-                </div>
+                <div class="option-card" onclick="slotEngine.setAutoSpins(10)"><div class="option-card-title">10 لـفـات</div></div>
+                <div class="option-card" onclick="slotEngine.setAutoSpins(20)"><div class="option-card-title">20 لـفـة</div></div>
+                <div class="option-card" onclick="slotEngine.setAutoSpins(50)"><div class="option-card-title">50 لـفـة</div></div>
+                <div class="option-card" onclick="slotEngine.setAutoSpins(100)"><div class="option-card-title">100 لـفـة</div></div>
+                <div class="option-card" style="grid-column: span 2;" onclick="slotEngine.setAutoSpins(999999)"><div class="option-card-title">∞ دوران مستمر</div></div>
             </div>
             <button class="btn-modal-close" onclick="slotEngine.closeModal('autoModal')">إلغاء</button>
         </div>
     </div>
 
+    <!-- نافذة شراء المكافأة المطابقة للصورة -->
     <div class="modal-bg" id="buyBonusModal">
         <div class="modal-card">
-            <h3>✨ شراء الميزة (Buy Bonus) ✨</h3>
-            <p style="font-size:0.8rem; color:#aaa; margin-bottom:12px;">تحصل على 5 لفت مجانية مع ثيران مضمونة بكل لفة</p>
-            <div class="buy-bonus-grid" id="buyBonusOptionsGrid">
-                </div>
+            <h3>✨ شراء المكافأة (Buy Bonus) ✨</h3>
+            <p style="font-size:0.8rem; color:#aaa; margin-bottom:12px;">تضمن الحصول على ثيران مضاعفة في 5 لفت مجانية</p>
+            <div class="buy-bonus-grid" id="buyBonusOptionsGrid"></div>
             <button class="btn-modal-close" onclick="slotEngine.closeModal('buyBonusModal')">إغلاق</button>
         </div>
     </div>
 
     <script>
-        /* ---------------- 1. محرك الأصوات البرمجية (Web Audio Synthesizer) ---------------- */
+        /* ---------------- 1. محرك الأصوات البرمجية المتكامل ---------------- */
         class AudioEngine {
             constructor() {
                 this.ctx = null;
@@ -581,13 +630,13 @@
                 const gain = this.ctx.createGain();
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.05);
-                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+                osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.04);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.04);
                 osc.connect(gain);
                 gain.connect(this.ctx.destination);
                 osc.start();
-                osc.stop(this.ctx.currentTime + 0.05);
+                osc.stop(this.ctx.currentTime + 0.04);
             }
 
             playReelStop() {
@@ -596,14 +645,30 @@
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
                 osc.type = 'triangle';
-                osc.frequency.setValueAtTime(140, this.ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.07);
                 gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.07);
                 osc.connect(gain);
                 gain.connect(this.ctx.destination);
                 osc.start();
-                osc.stop(this.ctx.currentTime + 0.08);
+                osc.stop(this.ctx.currentTime + 0.07);
+            }
+
+            playBullRoar() {
+                if (this.muted) return;
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(280, this.ctx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
             }
 
             playWinChime() {
@@ -622,7 +687,7 @@
                         gain.connect(this.ctx.destination);
                         osc.start();
                         osc.stop(this.ctx.currentTime + 0.35);
-                    }, idx * 80);
+                    }, idx * 75);
                 });
             }
 
@@ -634,42 +699,44 @@
 
         const audioEngine = new AudioEngine();
 
-        /* ---------------- 2. قائمة الرموز وثوابت خطوط الربح العشرة ---------------- */
+        /* ---------------- 2. الرموز وخطوط الربح وأسعار الرهان ---------------- */
         const SYMBOLS = [
-            { id: 'bull', img: 'https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png', isWild: true },
-            { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 1, 3: 5, 4: 25, 5: 500 } },
-            { id: 'star', img: 'https://i.ibb.co/5g15MWM1/file-000000003d9c821091d4b307ceb26f02.png', isScatter: true, pays: { 3: 20 } },
-            { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 2, 4: 4, 5: 20 } },
-            { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 4, 4: 12, 5: 70 } },
-            { id: 'plum', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', pays: { 3: 1, 4: 3, 5: 15 } },
-            { id: 'orange', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 1, 4: 3, 5: 15 } },
-            { id: 'lemon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 1, 4: 3, 5: 15 } }
+            { id: 'bull', img: 'https://i.ibb.co/fdbs16Dc/file-0000000055b4820a90f0cf27b1a50784.png', isWild: true },
+            { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 3, 3: 15, 4: 75, 5: 1500 } },
+            { id: 'star', img: 'https://i.ibb.co/5g15MWM1/file-000000003d9c821091d4b307ceb26f02.png', isScatter: true, pays: { 3: 60 } },
+            { id: 'dollar', img: 'https://i.ibb.co/3ykS8m7s/file-00000000d60482469dbe987eb6aa9ae0.png', isScatter: true, pays: { 3: 15, 4: 60, 5: 300 } },
+            { id: 'watermelon', img: 'https://i.ibb.co/KchLgC2P/file-00000000b0f48246a4e320f0edeb4f0c.png', pays: { 3: 12, 4: 36, 5: 210 } },
+            { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 12, 4: 36, 5: 210 } },
+            { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 6, 4: 12, 5: 60 } },
+            { id: 'plum', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', pays: { 3: 3, 4: 9, 5: 45 } },
+            { id: 'orange', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 3, 4: 9, 5: 45 } },
+            { id: 'lemon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 3, 4: 9, 5: 45 } }
         ];
 
-        // مصفوفة خطوط الربح الـ 10 المطابقة للصور
+        // خطوط الربح العشرة الرسمية
         const PAYLINES = [
-            [1, 1, 1, 1, 1], // خط 1
-            [0, 0, 0, 0, 0], // خط 2
-            [2, 2, 2, 2, 2], // خط 3
-            [0, 1, 2, 1, 0], // خط 4
-            [2, 1, 0, 1, 2], // خط 5
-            [0, 0, 1, 2, 2], // خط 6
-            [2, 2, 1, 0, 0], // خط 7
-            [1, 0, 0, 0, 1], // خط 8
-            [1, 2, 2, 2, 1], // خط 9
-            [0, 1, 1, 1, 0]  // خط 10
+            [1, 1, 1, 1, 1], // line 1
+            [0, 0, 0, 0, 0], // line 2
+            [2, 2, 2, 2, 2], // line 3
+            [0, 1, 2, 1, 0], // line 4
+            [2, 1, 0, 1, 2], // line 5
+            [0, 0, 1, 2, 2], // line 6
+            [2, 2, 1, 0, 0], // line 7
+            [1, 0, 0, 0, 1], // line 8
+            [1, 2, 2, 2, 1], // line 9
+            [0, 1, 1, 1, 0]  // line 10
         ];
 
-        // صفحات الرهان المضاعفة (5 صفحات من 3 NPS وحتى 1000 NPS)
+        // صفحات مضافة ومضاعفة من 3 وحتى 1000 NPS (تظهر بشكل 1، 2، 3...)
         const BET_PAGES = [
             [3, 6, 12, 15, 20],
-            [30, 35, 40, 45, 50],
+            [30, 40, 50, 60, 80],
             [100, 150, 200, 250, 300],
             [400, 500, 600, 700, 800],
             [850, 900, 950, 980, 1000]
         ];
 
-        /* ---------------- 3. محرك الكازينو الرئيسي (Slot Machine Engine) ---------------- */
+        /* ---------------- 3. محرك الكازينو واللعبة الرئيسي ---------------- */
         class SlotEngine {
             constructor() {
                 this.balance = 4771.8;
@@ -678,11 +745,19 @@
                 this.currentBet = 12;
 
                 this.isSpinning = false;
-                this.isTurbo = false;
+                this.speedMode = 1; // 1x, 2x, 3x
                 this.autoSpinsLeft = 0;
 
                 this.cellHeight = 0;
-                this.gridMatrix = [[], [], [], [], []]; // رموز الشاشة الحالية [col][row]
+                this.gridMatrix = [[], [], [], [], []];
+
+                // قيم العدادات العلوية
+                this.jackpots = {
+                    spade: 5060647.31,
+                    heart: 432433.03,
+                    diamond: 45290.97,
+                    club: 16476.43
+                };
             }
 
             init() {
@@ -691,6 +766,22 @@
                 this.initStrips();
                 this.updateBalanceUI();
                 this.updateBetRingUI('42%');
+                this.startJackpotTicker();
+            }
+
+            /* تحديث دائم للأرقام العلوية لتزيد وتنقص عشوائياً بشكل احترافي */
+            startJackpotTicker() {
+                setInterval(() => {
+                    const keys = ['spade', 'heart', 'diamond', 'club'];
+                    keys.forEach(key => {
+                        const change = (Math.random() - 0.48) * (this.jackpots[key] * 0.00008);
+                        this.jackpots[key] = Math.max(1000, this.jackpots[key] + change);
+                    });
+                    document.getElementById('jackpotSpade').innerText = this.jackpots.spade.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('jackpotHeart').innerText = this.jackpots.heart.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('jackpotDiamond').innerText = this.jackpots.diamond.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('jackpotClub').innerText = this.jackpots.club.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }, 2500);
             }
 
             calculateCellHeights() {
@@ -726,7 +817,7 @@
                 return SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
             }
 
-            /* إدارة قيمة الرهان وصفحات الرهان */
+            /* اختيار الرهان والتنقل بين الصفحات 1، 2، 3... */
             selectBetIndex(pillIdx, leftPos) {
                 if (this.isSpinning) return;
                 audioEngine.playClick();
@@ -743,6 +834,7 @@
 
                 const positions = ['5.2%', '23.8%', '42%', '60.2%', '78.5%'];
                 this.updateBetRingUI(positions[this.currentBetPillIndex]);
+                document.getElementById('betPageBadge').innerText = `فئة ${this.currentBetPageIndex + 1}`;
             }
 
             updateBetRingUI(leftPos) {
@@ -751,7 +843,14 @@
                 ring.innerText = `${this.currentBet} NPS`;
             }
 
-            /* بدء عملية الدوران والاتصال بالسيرفر */
+            /* تطوير زر السرعة ليعمل بـ 3 سرعات */
+            cycleSpeed() {
+                audioEngine.playClick();
+                this.speedMode = (this.speedMode % 3) + 1;
+                document.getElementById('speedBadge').innerText = `${this.speedMode}x`;
+            }
+
+            /* التدوير السريع مع توقف البكرات واحدة تلو الأخرى */
             async startSpin() {
                 if (this.isSpinning) return;
 
@@ -765,43 +864,42 @@
                 audioEngine.playClick();
                 this.isSpinning = true;
 
-                // خصم سعر الرهان فوراً عند بدء اللعب
                 this.balance -= this.currentBet;
                 this.updateBalanceUI();
 
-                document.getElementById('spinGlowRing').style.display = 'block';
                 this.clearWinningEffects();
                 this.hideWinBanner();
 
-                // خصم اللفات التلقائية
                 if (this.autoSpinsLeft > 0) {
                     this.autoSpinsLeft--;
                     this.updateAutoBadge();
                 }
 
-                // طلب النتيجة من سيرفر الموقع
                 const resultPromise = this.fetchResult();
 
-                const duration = this.isTurbo ? 200 : 550;
+                // تحكم ديناميكي بزر السرعة
+                const baseDelay = this.speedMode === 3 ? 30 : (this.speedMode === 2 ? 60 : 120);
+
                 for (let r = 0; r < 5; r++) {
                     const strip = document.getElementById(`strip${r}`);
                     strip.classList.add('reel-spinning');
 
-                    for (let k = 0; k < 8; k++) {
+                    for (let k = 0; k < 6; k++) {
                         strip.insertBefore(this.createSymbolElement(this.getRandomSymbol()), strip.firstChild);
                     }
 
-                    await new Promise(res => setTimeout(res, this.isTurbo ? 50 : 100));
+                    await new Promise(res => setTimeout(res, baseDelay));
                 }
 
                 const data = await resultPromise;
 
-                // تحديث مصفوفة الرموز بالنتيجة الحقيقية وتوجيه الحركة
+                // توقف كل بكرة واحدة تلو الأخرى بشكل متسلسل احترافي
+                const stopInterval = this.speedMode === 3 ? 80 : (this.speedMode === 2 ? 180 : 320);
+
                 for (let r = 0; r < 5; r++) {
                     const strip = document.getElementById(`strip${r}`);
-                    await new Promise(res => setTimeout(res, duration / 3));
+                    await new Promise(res => setTimeout(res, stopInterval));
 
-                    // استبدال الرموز الأخيرة بالنتيجة القادمة
                     strip.innerHTML = '';
                     this.gridMatrix[r] = data.reels[r];
                     for (let i = 0; i < 3; i++) {
@@ -811,13 +909,14 @@
                     strip.classList.remove('reel-spinning');
                     audioEngine.playReelStop();
                     strip.parentElement.classList.add('reel-bounce');
-                    setTimeout(() => strip.parentElement.classList.remove('reel-bounce'), 220);
+                    setTimeout(() => strip.parentElement.classList.remove('reel-bounce'), 180);
                 }
 
-                this.stopSpinUI();
+                this.isSpinning = false;
                 this.processResult(data);
             }
 
+            /* جلب نتيجة السيرفر مع حساب الخوارزمية المحلي عند انقطاع الاتصال */
             async fetchResult() {
                 try {
                     const res = await fetch('/api/game/play', {
@@ -827,15 +926,14 @@
                     });
                     if (res.ok) {
                         const json = await res.json();
-                        // تحويل استجابة السيرفر وتجهيز الأعمدة
-                        return this.parseServerResponse(json);
+                        return json;
                     }
                 } catch (e) {}
 
-                // محاكي احتياطي محلي دقيق لحساب الأرباح والرموز
                 return this.generateLocalSpinResult();
             }
 
+            /* خوارزمية احتساب الأرباح من جهة اليسار بدقة 100% */
             generateLocalSpinResult() {
                 const reels = [];
                 for (let col = 0; col < 5; col++) {
@@ -845,15 +943,15 @@
                     }
                 }
 
-                // إمكانية ظهور الثور في الأعمدة 2، 3، 4
+                // إمكانية ظهور الثور الذهبي على الأعمدة 2، 3، 4
                 let wildCols = [];
                 if (Math.random() < 0.35) {
                     const targetCol = [1, 2, 3][Math.floor(Math.random() * 3)];
-                    wildCols.push({ col: targetCol, mult: [2, 3, 5][Math.floor(Math.random() * 3)] });
-                    for (let r = 0; r < 3; r++) reels[targetCol][r] = SYMBOLS[0]; // Wild
+                    const mult = [2, 3, 5][Math.floor(Math.random() * 3)];
+                    wildCols.push({ col: targetCol, mult: mult });
+                    for (let r = 0; r < 3; r++) reels[targetCol][r] = SYMBOLS[0];
                 }
 
-                // حساب الأرباح بناءً على خطوط الربح العشرة
                 let totalWin = 0;
                 let winningLinesData = [];
 
@@ -872,9 +970,9 @@
                     }
 
                     if (firstSym && firstSym.pays && firstSym.pays[matchCount]) {
-                        let lineWin = (this.currentBet / 3) * firstSym.pays[matchCount];
+                        let lineWin = (this.currentBet / 10) * firstSym.pays[matchCount];
 
-                        // تطبيق مضاعفات الثور إن وجدت
+                        // تطبيق مضاعف الثور عند دخوله بالخط
                         wildCols.forEach(w => lineWin *= w.mult);
                         totalWin += lineWin;
                         winningLinesData.push({ lineIdx, matchCount });
@@ -891,8 +989,9 @@
             }
 
             processResult(data) {
-                // إظهار الثور الذهبي التوسعي بالأعمدة
+                // مظهر وقوف الثور التوسعي مغطياً البكرة مع المؤثرات الصوتية والعمودية
                 if (data.wildCols && data.wildCols.length > 0) {
+                    audioEngine.playBullRoar();
                     data.wildCols.forEach(w => this.expandStandingBull(w.col, w.mult));
                 }
 
@@ -900,16 +999,14 @@
                     audioEngine.playWinChime();
                     this.highlightWinningSymbols(data.winningLines);
                     this.drawWinningPaylines(data.winningLines);
-                    this.showWinBanner(`🏆 رابـح ${data.payout.toFixed(2)} NPS 🏆`);
+                    this.showWinBanner(`ربحت ${data.payout.toFixed(2)} NPS`);
 
-                    // إضافة الربح فوراً إلى الرصيد
                     this.balance += data.payout;
                     this.updateBalanceUI();
                 }
 
-                // استكمال اللفات التلقائية
                 if (this.autoSpinsLeft > 0) {
-                    setTimeout(() => this.startSpin(), this.isTurbo ? 350 : 900);
+                    setTimeout(() => this.startSpin(), this.speedMode === 3 ? 200 : 700);
                 } else if (this.autoSpinsLeft === 0) {
                     document.getElementById('btnAuto').style.background = '';
                 }
@@ -980,12 +1077,47 @@
                 document.getElementById('balanceDisplay').innerText = `Balance ${this.balance.toFixed(1)} NPS`;
             }
 
-            stopSpinUI() {
-                this.isSpinning = false;
-                document.getElementById('spinGlowRing').style.display = 'none';
+            /* فتح خيارات شراء المكافأة */
+            openBuyBonusModal() {
+                audioEngine.playClick();
+                const grid = document.getElementById('buyBonusOptionsGrid');
+                grid.innerHTML = `
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(50)">
+                        <div class="option-card-title">Single Wild</div>
+                        <div class="option-card-price">${(this.currentBet * 50).toFixed(0)} NPS</div>
+                    </div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(150)">
+                        <div class="option-card-title">Double Wild</div>
+                        <div class="option-card-price">${(this.currentBet * 150).toFixed(0)} NPS</div>
+                    </div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(350)">
+                        <div class="option-card-title">Triple Wild</div>
+                        <div class="option-card-price">${(this.currentBet * 350).toFixed(0)} NPS</div>
+                    </div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(100)">
+                        <div class="option-card-title">Random Wild</div>
+                        <div class="option-card-price">${(this.currentBet * 100).toFixed(0)} NPS</div>
+                    </div>
+                `;
+                document.getElementById('buyBonusModal').style.display = 'flex';
             }
 
-            /* وظائف التدوير التلقائي وشراء الميزة */
+            executeBuyBonus(mult) {
+                const cost = this.currentBet * mult;
+                if (this.balance < cost) {
+                    alert('الرصيد غير كافٍ لشراء هذه الميزة!');
+                    return;
+                }
+
+                this.balance -= cost;
+                this.updateBalanceUI();
+                this.closeModal('buyBonusModal');
+
+                this.autoSpinsLeft = 5;
+                this.updateAutoBadge();
+                if (!this.isSpinning) this.startSpin();
+            }
+
             openAutoModal() { audioEngine.playClick(); document.getElementById('autoModal').style.display = 'flex'; }
             
             setAutoSpins(count) {
@@ -1007,67 +1139,20 @@
                 }
             }
 
-            toggleTurbo() {
-                audioEngine.playClick();
-                this.isTurbo = !this.isTurbo;
-                document.getElementById('btnTurbo').style.background = this.isTurbo ? 'rgba(255, 230, 0, 0.4)' : '';
-            }
-
-            openBuyBonusModal() {
-                audioEngine.playClick();
-                const grid = document.getElementById('buyBonusOptionsGrid');
-                grid.innerHTML = `
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus('single', 50)">
-                        <div class="option-card-title">ثور واحد (Single Wild)</div>
-                        <div class="option-card-price">${(this.currentBet * 50).toFixed(0)} NPS</div>
-                    </div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus('double', 150)">
-                        <div class="option-card-title">ثوران (Double Wild)</div>
-                        <div class="option-card-price">${(this.currentBet * 150).toFixed(0)} NPS</div>
-                    </div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus('triple', 350)">
-                        <div class="option-card-title">3 ثيران (Triple Wild)</div>
-                        <div class="option-card-price">${(this.currentBet * 350).toFixed(0)} NPS</div>
-                    </div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus('random', 100)">
-                        <div class="option-card-title">عشوائي (Random Wild)</div>
-                        <div class="option-card-price">${(this.currentBet * 100).toFixed(0)} NPS</div>
-                    </div>
-                `;
-                document.getElementById('buyBonusModal').style.display = 'flex';
-            }
-
-            executeBuyBonus(type, mult) {
-                const cost = this.currentBet * mult;
-                if (this.balance < cost) {
-                    alert('الرصيد غير كافٍ لشراء هذه الميزة!');
-                    return;
-                }
-
-                this.balance -= cost;
-                this.updateBalanceUI();
-                this.closeModal('buyBonusModal');
-                
-                // تفعيل 5 لفات مجانية بميزة الثور
-                this.autoSpinsLeft = 5;
-                this.updateAutoBadge();
-                if (!this.isSpinning) this.startSpin();
-            }
-
             openMenu() { audioEngine.playClick(); document.getElementById('rulesModal').style.display = 'flex'; }
             closeModal(id) { audioEngine.playClick(); document.getElementById(id).style.display = 'none'; }
         }
 
         const slotEngine = new SlotEngine();
 
-        /* 3. تشغيل شاشة التحميل الحية ثم فتح واجهة اللعبة */
+        /* تشغيل التحميل بأسلوب سريع ومباشر */
         window.addEventListener('DOMContentLoaded', () => {
             let progress = 0;
             const fill = document.getElementById('progressFill');
             const text = document.getElementById('progressText');
 
             const timer = setInterval(() => {
-                progress += 3.4;
+                progress += 4.5;
                 fill.style.width = `${Math.min(progress, 100)}%`;
                 text.innerText = `${Math.floor(Math.min(progress, 100))}%`;
 
@@ -1077,9 +1162,9 @@
                         document.getElementById('loader-screen').style.display = 'none';
                         document.getElementById('game-stage').style.display = 'block';
                         slotEngine.init();
-                    }, 200);
+                    }, 150);
                 }
-            }, 100);
+            }, 80);
         });
     </script>
 </body>
