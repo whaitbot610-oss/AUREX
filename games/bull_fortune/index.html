@@ -1527,1297 +1527,635 @@ html,body{
 
 <script>
 
-/* =========================================================
-   GOLDEN BULL
-   نظام الصوت الداخلي
-========================================================= */
-
-class GameAudio {
-
-    constructor(){
-
-        this.enabled = true;
-        this.ctx = null;
-
-        this.spinOscillators = [];
-    }
-
-    init(){
-
-        if(this.ctx) return;
-
-        const AudioContext =
-            window.AudioContext ||
-            window.webkitAudioContext;
-
-        if(!AudioContext) return;
-
-        this.ctx =
-            new AudioContext();
-
-    }
-
-    tone(
-        frequency,
-        duration,
-        type = 'sine',
-        volume = .1,
-        slide = null
-    ){
-
-        if(!this.enabled) return;
-
-        this.init();
-
-        if(!this.ctx) return;
-
-        if(this.ctx.state === 'suspended'){
-            this.ctx.resume();
-        }
-
-        const oscillator =
-            this.ctx.createOscillator();
-
-        const gain =
-            this.ctx.createGain();
-
-        oscillator.type = type;
-
-        oscillator.frequency.setValueAtTime(
-            frequency,
-            this.ctx.currentTime
-        );
-
-        if(slide){
-
-            oscillator.frequency.exponentialRampToValueAtTime(
-                Math.max(1,slide),
-                this.ctx.currentTime + duration
-            );
-
-        }
-
-        gain.gain.setValueAtTime(
-            .0001,
-            this.ctx.currentTime
-        );
-
-        gain.gain.exponentialRampToValueAtTime(
-            volume,
-            this.ctx.currentTime + .015
-        );
-
-        gain.gain.exponentialRampToValueAtTime(
-            .0001,
-            this.ctx.currentTime + duration
-        );
-
-        oscillator.connect(gain);
-
-        gain.connect(
-            this.ctx.destination
-        );
-
-        oscillator.start();
-
-        oscillator.stop(
-            this.ctx.currentTime +
-            duration +
-            .03
-        );
-
-    }
-
-    noise(duration=.1,volume=.06){
-
-        if(!this.enabled) return;
-
-        this.init();
-
-        if(!this.ctx) return;
-
-        const buffer =
-            this.ctx.createBuffer(
-                1,
-                this.ctx.sampleRate * duration,
-                this.ctx.sampleRate
-            );
-
-        const data =
-            buffer.getChannelData(0);
-
-        for(let i=0;i<data.length;i++){
-
-            data[i] =
-                (Math.random()*2-1) *
-                (1-i/data.length);
-
-        }
-
-        const source =
-            this.ctx.createBufferSource();
-
-        const gain =
-            this.ctx.createGain();
-
-        source.buffer =
-            buffer;
-
-        gain.gain.value =
-            volume;
-
-        source.connect(gain);
-
-        gain.connect(
-            this.ctx.destination
-        );
-
-        source.start();
-
-    }
-
-    button(){
-
-        this.tone(
-            440,
-            .06,
-            'square',
-            .07,
-            650
-        );
-
-    }
-
-    spinStart(){
-
-        this.tone(
-            100,
-            .18,
-            'sawtooth',
-            .08,
-            180
-        );
-
-    }
-
-    reelTick(){
-
-        this.noise(
-            .035,
-            .025
-        );
-
-        this.tone(
-            170,
-            .04,
-            'square',
-            .025,
-            130
-        );
-
-    }
-
-    reelStop(){
-
-        this.tone(
-            150,
-            .08,
-            'square',
-            .09,
-            90
-        );
-
-        this.noise(
-            .05,
-            .05
-        );
-
-    }
-
-    bullDrop(){
-
-        this.tone(
-            70,
-            .5,
-            'sawtooth',
-            .15,
-            35
-        );
-
-        setTimeout(()=>{
-
-            this.tone(
-                55,
-                .35,
-                'sine',
-                .15,
-                30
-            );
-
-        },150);
-
-    }
-
-    normalWin(){
-
-        this.tone(
-            523,
-            .15,
-            'sine',
-            .12,
-            660
-        );
-
-        setTimeout(()=>{
-
-            this.tone(
-                660,
-                .16,
-                'sine',
-                .12,
-                880
-            );
-
-        },110);
-
-        setTimeout(()=>{
-
-            this.tone(
-                880,
-                .3,
-                'sine',
-                .14,
-                1100
-            );
-
-        },220);
-
-    }
-
-    bigWin(){
-
-        const notes =
-            [392,523,659,784,1046];
-
-        notes.forEach((note,index)=>{
-
-            setTimeout(()=>{
-
-                this.tone(
-                    note,
-                    .35,
-                    'sine',
-                    .12,
-                    note*1.25
+        /* =========================================================
+           GOLDEN BULL — Modern Web Audio
+           أصوات داخلية خفيفة، بدون ملفات خارجية
+        ========================================================= */
+        class GameAudio {
+            constructor() {
+                this.enabled = true;
+                this.ctx = null;
+                this.master = null;
+            }
+
+            init() {
+                if (this.ctx) {
+                    if (this.ctx.state === 'suspended') this.ctx.resume().catch(()=>{});
+                    return;
+                }
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return;
+                try {
+                    this.ctx = new AC();
+                    this.master = this.ctx.createGain();
+                    this.master.gain.value = 0.18;
+                    this.master.connect(this.ctx.destination);
+                } catch (_) {}
+            }
+
+            _tone(freq, duration=.08, type='sine', volume=.12, endFreq=null, when=0) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx || !this.master) return;
+                const now = this.ctx.currentTime + when;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(Math.max(20, freq), now);
+                if (endFreq) {
+                    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), now + duration);
+                }
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), now + Math.min(.012, duration*.25));
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+                osc.connect(gain);
+                gain.connect(this.master);
+                osc.start(now);
+                osc.stop(now + duration + .025);
+            }
+
+            _noise(duration=.035, volume=.035, when=0) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx || !this.master) return;
+                const length = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+                const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i=0; i<length; i++) data[i] = (Math.random()*2-1) * (1-i/length);
+                const source = this.ctx.createBufferSource();
+                const gain = this.ctx.createGain();
+                const now = this.ctx.currentTime + when;
+                source.buffer = buffer;
+                gain.gain.setValueAtTime(volume, now);
+                gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+                source.connect(gain);
+                gain.connect(this.master);
+                source.start(now);
+            }
+
+            unlock() { this.init(); }
+
+            button() {
+                this._tone(620, .045, 'triangle', .10, 920);
+            }
+
+            spinStart() {
+                this._tone(92, .16, 'sawtooth', .10, 170);
+                this._noise(.07, .025);
+            }
+
+            reelTick() {
+                this._tone(210, .028, 'square', .035, 155);
+            }
+
+            reelStop() {
+                this._tone(145, .075, 'triangle', .11, 82);
+                this._noise(.045, .04);
+            }
+
+            normalWin() {
+                [523, 659, 784].forEach((n,i) =>
+                    this._tone(n, .13, 'sine', .11, n*1.08, i*.075)
                 );
+            }
 
-            },index*130);
+            bigWin() {
+                [392, 523, 659, 784, 1047, 1319].forEach((n,i) =>
+                    this._tone(n, .22, 'sine', .13, n*1.12, i*.09)
+                );
+                this._noise(.18, .025, .25);
+            }
 
-        });
+            bullDrop() {
+                this._tone(78, .28, 'sawtooth', .13, 42);
+                this._tone(156, .22, 'triangle', .08, 82, .08);
+                this._tone(65, .38, 'sine', .12, 38, .18);
+            }
 
-    }
-
-    toggle(){
-
-        this.enabled =
-            !this.enabled;
-
-        this.button();
-
-    }
-
-}
-
-const gameAudio =
-    new GameAudio();
-
-
-/* =========================================================
-   قائمة الرموز
-========================================================= */
-
-const SYMBOLS = [
-
-    {
-        id:'bull',
-
-        img:
-        'https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png',
-
-        isWild:true
-    },
-
-    {
-        id:'seven',
-
-        img:
-        'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png',
-
-        pays:{
-            2:3,
-            3:15,
-            4:75,
-            5:1500
+            toggle() {
+                this.init();
+                this.enabled = !this.enabled;
+                if (this.enabled) {
+                    this._tone(520, .07, 'triangle', .08, 780);
+                }
+            }
         }
-    },
 
-    {
-        id:'grape',
-
-        img:
-        'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png',
-
-        pays:{
-            3:12,
-            4:36,
-            5:210
-        }
-    },
-
-    {
-        id:'melon',
-
-        img:
-        'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png',
-
-        pays:{
-            3:12,
-            4:36,
-            5:210
-        }
-    },
-
-    {
-        id:'bell',
-
-        img:
-        'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png',
-
-        pays:{
-            3:6,
-            4:12,
-            5:60
-        }
-    },
-
-    {
-        id:'star',
-
-        img:
-        'https://i.ibb.co/5g15MWM1/file-000000003d9c821091d4b307ceb26f02.png',
-
-        isStar:true
-    },
-
-    {
-        id:'dollar',
-
-        img:
-        'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png',
-
-        isDollar:true,
-
-        pays:{
-            3:15,
-            4:60,
-            5:300
-        }
-    },
-
-    {
-        id:'cherry',
-
-        img:
-        'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png',
-
-        pays:{
-            3:3,
-            4:9,
-            5:45
-        }
-    },
-
-    {
-        id:'orange',
-
-        img:
-        'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png',
-
-        pays:{
-            3:3,
-            4:9,
-            5:45
-        }
-    },
-
-    {
-        id:'lemon',
-
-        img:
-        'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png',
-
-        pays:{
-            3:3,
-            4:9,
-            5:45
-        }
-    },
-
-    {
-        id:'plum',
-
-        img:
-        'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png',
-
-        pays:{
-            3:3,
-            4:9,
-            5:45
-        }
-    }
-
-];
-
-
-/* =========================================================
-   خطوط الفوز
-========================================================= */
-
-const PAYLINES = [
-
-    [1,1,1,1,1],
-    [0,0,0,0,0],
-    [2,2,2,2,2],
-    [0,1,2,1,0],
-    [2,1,0,1,2],
-    [0,0,1,2,2],
-    [2,2,1,0,0],
-    [1,0,0,0,1],
-    [1,2,2,2,1],
-    [0,1,1,1,0]
-
-];
-
-
-/* =========================================================
-   صفحات الرهان
-========================================================= */
-
-const BET_PAGES = [
-
-    [3,6,12,15,20],
-
-    [30,45,60,75,100],
-
-    [150,200,250,300,400],
-
-    [500,600,700,800,900],
-
-    [920,950,970,990,1000]
-
-];
-
-
-/* =========================================================
-   محرك اللعبة
-========================================================= */
-
-class SlotEngine {
-
-    constructor(){
-
-        this.balance = 0;
-
-        this.currentBetPageIndex = 0;
-
-        this.currentBetPillIndex = 2;
-
-        this.currentBet = 12;
-
-        this.isSpinning = false;
-
-        this.forceStopRequested = false;
-
-        this.speedLevel = 1;
-
-        this.autoSpinsLeft = 0;
-
-        this.gridMatrix =
-            [[],[],[],[],[]];
-
-        this.currentRoundId =
-            null;
-
-        this.lastBalance =
-            0;
-
-        this.bonusRounds =
-            0;
-
-        this.bonusMode = 'auto';
-        this.bonusPurchaseCost = 0;
-        this.bonusPurchaseCap = 0;
-        this.bonusPayoutTotal = 0;
-
-    }
-
-
-    /* =====================================================
-       بدء اللعبة
-    ===================================================== */
-
-    async init(){
-
-        this.initStrips();
-
-        this.bindTouchEvents();
-
-        this.updatePillsUI();
-
-        this.startJackpotFluctuations();
-
-        await this.syncUserBalance();
-
-    }
-
-
-    /* =====================================================
-       الرصيد
-    ===================================================== */
-
-    async syncUserBalance(){
-
-        try{
-
-            const response =
-                await fetch(
-                    '/api/user/account',
-                    {
-                        method:'GET',
-                        headers:{
-                            'Content-Type':
-                            'application/json'
+        const gameAudio = new GameAudio();
+        document.addEventListener('pointerdown', () => gameAudio.unlock(), { once: true, passive: true });
+
+
+        /* 1. قائمة الرموز الـ 11 المعرفات */
+        const SYMBOLS = [
+            { id: 'bull', img: 'https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png', isWild: true },
+            { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 3, 3: 15, 4: 75, 5: 1500 } },
+            { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 12, 4: 36, 5: 210 } },
+            { id: 'melon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 12, 4: 36, 5: 210 } },
+            { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 6, 4: 12, 5: 60 } },
+            { id: 'star', img: 'https://i.ibb.co/5g15MWM1/file-000000003d9c821091d4b307ceb26f02.png', isStar: true },
+            { id: 'dollar', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', isDollar: true, pays: { 3: 15, 4: 60, 5: 300 } },
+            { id: 'cherry', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 3, 4: 9, 5: 45 } },
+            { id: 'orange', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 3, 4: 9, 5: 45 } },
+            { id: 'lemon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 3, 4: 9, 5: 45 } },
+            { id: 'plum', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', pays: { 3: 3, 4: 9, 5: 45 } }
+        ];
+
+        /* خطوط الربح العشرة الرسمية المطبقة والصحيحة */
+        const PAYLINES = [
+            [1, 1, 1, 1, 1], // 1. الصف الأوسط
+            [0, 0, 0, 0, 0], // 2. الصف العلوي
+            [2, 2, 2, 2, 2], // 3. الصف السفلي
+            [0, 1, 2, 1, 0], // 4. شكل V
+            [2, 1, 0, 1, 2], // 5. شكل V معكوس
+            [0, 0, 1, 2, 2], // 6. سلم نازل
+            [2, 2, 1, 0, 0], // 7. سلم صاعد
+            [1, 0, 0, 0, 1], // 8. مقعر
+            [1, 2, 2, 2, 1], // 9. محدب
+            [0, 1, 1, 1, 0]  // 10. زاوية علوية
+        ];
+
+        /* صفحات أسعار الرهان الـ 5 (لكل صفحة 5 أسعار رهان) */
+        const BET_PAGES = [
+            [3, 6, 12, 15, 20],
+            [30, 45, 60, 75, 100],
+            [150, 200, 250, 300, 400],
+            [500, 600, 700, 800, 900],
+            [920, 950, 970, 990, 1000]
+        ];
+
+        /* 2. محرك اللعبة والربط مع الموقع */
+        class SlotEngine {
+            constructor() {
+                this.balance = 0.0;
+                this.currentBetPageIndex = 0;
+                this.currentBetPillIndex = 2; // افتراضي 12 NPS
+                this.currentBet = 12;
+
+                this.isSpinning = false;
+                this.forceStopRequested = false;
+                this.speedLevel = 1;
+                this.autoSpinsLeft = 0;
+
+                this.gridMatrix = [[], [], [], [], []];
+                this.currentRoundId = null;
+            }
+
+            async init() {
+                this.initStrips();
+                this.bindTouchEvents();
+                this.updatePillsUI();
+                this.startJackpotFluctuations();
+                await this.syncUserBalance();
+            }
+
+            async syncUserBalance() {
+                try {
+                    const res = await fetch('/api/user/account', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+                    const data = await res.json();
+                    if (data && data.status !== 'error') {
+                        this.balance = parseFloat(data.site_balance || data.balance || 0);
+                        this.updateBalanceUI();
+                    }
+                } catch(e) {
+                    console.log("Connecting balance...", e);
+                }
+            }
+
+            initStrips() {
+                for (let r = 0; r < 5; r++) {
+                    const strip = document.getElementById(`strip${r}`);
+                    strip.innerHTML = '';
+                    this.gridMatrix[r] = [];
+                    for (let i = 0; i < 3; i++) {
+                        const sym = this.getSafeRandomSymbol(r, i, this.gridMatrix);
+                        this.gridMatrix[r].push(sym);
+                        strip.appendChild(this.createSymbolElement(sym));
+                    }
+                }
+            }
+
+            bindTouchEvents() {
+                const grid = document.getElementById('reelsGrid');
+                let startY = 0;
+                grid.addEventListener('touchstart', (e) => {
+                    startY = e.touches[0].clientY;
+                }, { passive: true });
+
+                grid.addEventListener('touchend', (e) => {
+                    let diffY = e.changedTouches[0].clientY - startY;
+                    if (Math.abs(diffY) > 35) {
+                        this.handleSpinClick();
+                    }
+                }, { passive: true });
+            }
+
+            createSymbolElement(sym) {
+                const div = document.createElement('div');
+                div.className = 'symbol-cell';
+                div.setAttribute('data-id', sym.id);
+                div.innerHTML = `<img src="${sym.img}" alt="${sym.id}">`;
+                return div;
+            }
+
+            getSafeRandomSymbol(col, row, currentGrid) {
+                let currentBulls = 0, currentStars = 0, currentDollars = 0;
+                for (let c = 0; c < 5; c++) {
+                    if (!currentGrid[c]) continue;
+                    for (let r = 0; r < currentGrid[c].length; r++) {
+                        const s = currentGrid[c][r];
+                        if (s) {
+                            if (s.isWild) currentBulls++;
+                            if (s.isStar) currentStars++;
+                            if (s.isDollar) currentDollars++;
                         }
                     }
-                );
-
-            const data =
-                await response.json();
-
-            if(
-                data &&
-                data.status !== 'error'
-            ){
-
-                this.balance =
-                    parseFloat(
-                        data.site_balance ||
-                        data.balance ||
-                        0
-                    );
-
-                this.lastBalance =
-                    this.balance;
-
-                this.updateBalanceUI();
-
-            }
-
-        }
-
-        catch(error){
-
-            console.log(
-                'Connecting balance...',
-                error
-            );
-
-        }
-
-    }
-
-
-    /* =====================================================
-       إنشاء البكرات
-    ===================================================== */
-
-    initStrips(){
-
-        for(
-            let reel=0;
-            reel<5;
-            reel++
-        ){
-
-            const strip =
-                document.getElementById(
-                    `strip${reel}`
-                );
-
-            strip.innerHTML = '';
-
-            this.gridMatrix[reel] = [];
-
-            for(
-                let row=0;
-                row<3;
-                row++
-            ){
-
-                const symbol =
-                    this.getSafeRandomSymbol();
-
-                this.gridMatrix[reel].push(
-                    symbol
-                );
-
-                strip.appendChild(
-                    this.createSymbolElement(
-                        symbol
-                    )
-                );
-
-            }
-
-        }
-
-    }
-
-
-    /* =====================================================
-       اللمس
-    ===================================================== */
-
-    bindTouchEvents(){
-
-        const grid =
-            document.getElementById(
-                'reelsGrid'
-            );
-
-        let startY = 0;
-
-        grid.addEventListener(
-            'touchstart',
-            event=>{
-
-                startY =
-                    event.touches[0].clientY;
-
-            },
-            {
-                passive:true
-            }
-        );
-
-        grid.addEventListener(
-            'touchend',
-            event=>{
-
-                const difference =
-                    event.changedTouches[0].clientY -
-                    startY;
-
-                if(
-                    Math.abs(difference) > 35
-                ){
-
-                    this.handleSpinClick();
-
                 }
 
-            },
-            {
-                passive:true
+                if (currentBulls < 2 && Math.random() < 0.035) return SYMBOLS[0];
+                if ((col === 0 || col === 2 || col === 4) && currentStars < 3 && Math.random() < 0.04) return SYMBOLS[5];
+                if (currentDollars < 3 && Math.random() < 0.04) return SYMBOLS[6];
+
+                const normalSymbols = [1, 2, 3, 4, 7, 8, 9, 10];
+                const randIdx = normalSymbols[Math.floor(Math.random() * normalSymbols.length)];
+                return SYMBOLS[randIdx];
             }
-        );
 
-    }
-
-
-    /* =====================================================
-       عنصر الرمز
-    ===================================================== */
-
-    createSymbolElement(symbol){
-
-        const div =
-            document.createElement('div');
-
-        div.className =
-            'symbol-cell';
-
-        div.dataset.id =
-            symbol.id;
-
-        div.innerHTML = `
-            <img
-                src="${symbol.img}"
-                alt="${symbol.id}">
-        `;
-
-        return div;
-
-    }
-
-
-    /* =====================================================
-       رمز عشوائي
-       الرقم 7 أصبح نادراً
-       الثور لا يتم اختياره هنا
-       بل يتم التحكم به على مستوى الأعمدة
-    ===================================================== */
-
-    getSafeRandomSymbol(){
-
-        const random =
-            Math.random();
-
-        /*
-        الرقم 7 نادر جداً
-        تقريباً 2%
-        */
-
-        if(random < .02){
-
-            return SYMBOLS[1];
-
-        }
-
-        /*
-        النجمة
-        */
-
-        if(random < .06){
-
-            return SYMBOLS[5];
-
-        }
-
-        /*
-        الدولار
-        */
-
-        if(random < .10){
-
-            return SYMBOLS[6];
-
-        }
-
-        const normalIndexes =
-            [
-                2,
-                3,
-                4,
-                7,
-                8,
-                9,
-                10
-            ];
-
-        const index =
-            normalIndexes[
-                Math.floor(
-                    Math.random() *
-                    normalIndexes.length
-                )
-            ];
-
-        return SYMBOLS[index];
-
-    }
-
-
-    /* =====================================================
-       الجاكبوت
-    ===================================================== */
-
-    startJackpotFluctuations(){
-
-        setInterval(()=>{
-
-            [
-
-                'jackpotBaston',
-                'jackpotDinar',
-                'jackpotKaba',
-                'jackpotZahr'
-
-            ].forEach(id=>{
-
-                const element =
-                    document.getElementById(id);
-
-                if(!element) return;
-
-                let value =
-                    parseFloat(
-                        element.innerText
-                        .replace(/,/g,'')
-                    );
-
-                value +=
-                    Math.random()*2.5-.8;
-
-                element.innerText =
-                    value.toLocaleString(
-                        'en-US',
-                        {
-                            minimumFractionDigits:2,
-                            maximumFractionDigits:2
-                        }
-                    );
-
-            });
-
-        },3000);
-
-    }
-
-
-    /* =====================================================
-       اختيار الرهان
-    ===================================================== */
-
-    selectBetIndex(index){
-
-        if(this.isSpinning) return;
-
-        gameAudio.button();
-
-        this.currentBetPillIndex =
-            index;
-
-        this.currentBet =
-            BET_PAGES[
-                this.currentBetPageIndex
-            ][index];
-
-        this.updatePillsUI();
-
-    }
-
-
-    nextBetPage(){
-
-        if(this.isSpinning) return;
-
-        gameAudio.button();
-
-        this.currentBetPageIndex =
-            (
-                this.currentBetPageIndex + 1
-            ) %
-            BET_PAGES.length;
-
-        this.currentBet =
-            BET_PAGES[
-                this.currentBetPageIndex
-            ][
-                this.currentBetPillIndex
-            ];
-
-        document
-            .getElementById(
-                'betCategoryBadge'
-            )
-            .innerText =
-            `فئة: ${
-                this.currentBetPageIndex + 1
-            }`;
-
-        this.updatePillsUI();
-
-    }
-
-
-    updatePillsUI(){
-
-        const pills =
-            document.querySelectorAll(
-                '.bet-pill-btn'
-            );
-
-        const values =
-            BET_PAGES[
-                this.currentBetPageIndex
-            ];
-
-        pills.forEach(
-            (pill,index)=>{
-
-                pill.innerText =
-                    `${values[index]} NPS`;
-
-                pill.classList.toggle(
-                    'active',
-                    index ===
-                    this.currentBetPillIndex
-                );
-
+            startJackpotFluctuations() {
+                setInterval(() => {
+                    ['jackpotBaston', 'jackpotDinar', 'jackpotKaba', 'jackpotZahr'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (!el) return;
+                        let val = parseFloat(el.innerText.replace(/,/g, ''));
+                        val += (Math.random() * 2.5) - 0.8;
+                        el.innerText = val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    });
+                }, 3000);
             }
-        );
 
-    }
+            selectBetIndex(pillIdx) {
+                if (this.isSpinning) return;
+                gameAudio.button();
+                this.currentBetPillIndex = pillIdx;
+                this.currentBet = BET_PAGES[this.currentBetPageIndex][pillIdx];
+                this.updatePillsUI();
+            }
 
+            nextBetPage() {
+                if (this.isSpinning) return;
+                gameAudio.button();
+                this.currentBetPageIndex = (this.currentBetPageIndex + 1) % BET_PAGES.length;
+                this.currentBet = BET_PAGES[this.currentBetPageIndex][this.currentBetPillIndex];
+                document.getElementById('betCategoryBadge').innerText = `فئة: ${this.currentBetPageIndex + 1}`;
+                this.updatePillsUI();
+            }
 
-    /* =====================================================
-       السرعة
-    ===================================================== */
-
-    cycleSpeed(){
-
-        this.speedLevel =
-            (
-                this.speedLevel % 3
-            ) + 1;
-
-        gameAudio.button();
-
-        const labels = {
-
-            1:'1x عادي',
-
-            2:'2x سريع',
-
-            3:'3x تيربو'
-
-        };
-
-        document
-            .getElementById(
-                'speedBadge'
-            )
-            .innerText =
-            labels[this.speedLevel];
-
-    }
-
-
-    /* =====================================================
-       زر الدوران
-    ===================================================== */
-
-    handleSpinClick(){
-
-        gameAudio.button();
-
-        if(this.isSpinning){
-
-            this.forceStopRequested =
-                true;
-
-            return;
-
-        }
-
-        this.startSpin();
-
-    }
-
-
-    /* =====================================================
-       بدء الجولة
-    ===================================================== */
-
-
-    async startSpin(){
-        if(this.isSpinning) return;
-        if(this.balance < this.currentBet){
-            alert('الرصيد غير كافٍ في حساب الموقع للعب!');
-            this.autoSpinsLeft = 0;
-            return;
-        }
-
-        gameAudio.init();
-        this.isSpinning = true;
-        this.forceStopRequested = false;
-        this.clearWinningEffects();
-        this.hideWinBanner();
-
-        const isBonusRound = this.bonusRounds > 0;
-        if(isBonusRound){
-            this.bonusRounds--;
-            this.autoSpinsLeft = this.bonusRounds;
-        } else if(this.autoSpinsLeft > 0){
-            this.autoSpinsLeft--;
-        }
-
-        let backendResult = null;
-        if(!isBonusRound){
-            try{
-                const response = await fetch('/api/play',{
-                    method:'POST',
-                    headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({game_name:'golden_bull',bet_amount:this.currentBet})
+            updatePillsUI() {
+                const pills = document.querySelectorAll('.bet-pill-btn');
+                const pageVals = BET_PAGES[this.currentBetPageIndex];
+                pills.forEach((pill, idx) => {
+                    pill.innerText = `${pageVals[idx]} NPS`;
+                    if (idx === this.currentBetPillIndex) {
+                        pill.classList.add('active');
+                    } else {
+                        pill.classList.remove('active');
+                    }
                 });
-                backendResult = await response.json();
-                if(backendResult && backendResult.status === 'success'){
-                    this.currentRoundId = backendResult.round_id;
-                    this.balance = Number(backendResult.new_balance ?? this.balance);
+            }
+
+            cycleSpeed() {
+                gameAudio.button();
+                this.speedLevel = (this.speedLevel % 3) + 1;
+                const labels = { 1: '1x عادي', 2: '2x سريع', 3: '3x تيربو' };
+                document.getElementById('speedBadge').innerText = labels[this.speedLevel];
+            }
+
+            handleSpinClick() {
+                gameAudio.unlock();
+                if (this.isSpinning) {
+                    this.forceStopRequested = true;
+                    return;
+                }
+                this.startSpin();
+            }
+
+            async startSpin() {
+                if (this.balance < this.currentBet) {
+                    alert('الرصيد غير كافٍ في حساب الموقع للعب! يرجى الشحن أولاً.');
+                    this.autoSpinsLeft = 0;
+                    return;
+                }
+
+                this.isSpinning = true;
+                this.forceStopRequested = false;
+                gameAudio.spinStart();
+
+                this.clearWinningEffects();
+                this.hideWinBanner();
+
+                if (this.autoSpinsLeft > 0) this.autoSpinsLeft--;
+
+                // إرسال كود اللعب للباك اند وتفعيل الخوارزمية
+                let backendResult = null;
+                try {
+                    const response = await fetch('/api/play', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ game_name: 'golden_bull', bet_amount: this.currentBet })
+                    });
+                    backendResult = await response.json();
+                    if (backendResult.status === 'success') {
+                        this.currentRoundId = backendResult.round_id;
+                        this.balance = backendResult.new_balance;
+                        this.updateBalanceUI();
+                    }
+                } catch(err) {
+                    console.log("Direct play mode active", err);
+                    this.balance -= this.currentBet;
                     this.updateBalanceUI();
                 }
-            }catch(err){
-                this.balance -= this.currentBet;
+
+                const finalResult = this.generateControlledResult(backendResult);
+
+                const spinPromises = [];
+                for (let col = 0; col < 5; col++) {
+                    spinPromises.push(this.spinColumn(col, finalResult.reels[col]));
+                }
+
+                await Promise.all(spinPromises);
+
+                this.isSpinning = false;
+                await this.processResult(finalResult);
+            }
+
+            async spinColumn(colIdx, targetSymbols) {
+                const strip = document.getElementById(`strip${colIdx}`);
+                strip.classList.add('reel-spinning');
+
+                const startTime = Date.now();
+                const baseDelay = this.speedLevel === 3 ? 80 : (this.speedLevel === 2 ? 160 : 280);
+                const minDuration = 350 + (colIdx * baseDelay);
+
+                while (Date.now() - startTime < minDuration && !this.forceStopRequested) {
+                    strip.insertBefore(this.createSymbolElement(this.getSafeRandomSymbol(colIdx, 0, [])), strip.firstChild);
+                    if (strip.children.length > 7) strip.removeChild(strip.lastChild);
+                    gameAudio.reelTick();
+                    await new Promise(r => setTimeout(r, this.speedLevel === 3 ? 20 : 35));
+                }
+
+                strip.innerHTML = '';
+                this.gridMatrix[colIdx] = targetSymbols;
+                for (let i = 0; i < 3; i++) {
+                    strip.appendChild(this.createSymbolElement(targetSymbols[i]));
+                }
+                strip.classList.remove('reel-spinning');
+                strip.classList.add('reel-stop-bounce');
+                setTimeout(() => strip.classList.remove('reel-stop-bounce'), 360);
+                gameAudio.reelStop();
+            }
+
+            generateControlledResult(backendResult) {
+                const reels = [[], [], [], [], []];
+                let wildCols = [];
+
+                for (let c = 0; c < 5; c++) {
+                    for (let r = 0; r < 3; r++) {
+                        reels[c].push(this.getSafeRandomSymbol(c, r, reels));
+                    }
+                }
+
+                if (backendResult && backendResult.win && backendResult.payout > 0) {
+                    // توزيع رمز متطابق لتنفيذ فوز حقيقي
+                    const winSym = SYMBOLS[1]; // Seven
+                    const matchLen = Math.min(5, Math.max(3, Math.floor(Math.random() * 3) + 3));
+                    const lineIdx = Math.floor(Math.random() * PAYLINES.length);
+                    const linePattern = PAYLINES[lineIdx];
+
+                    for (let c = 0; c < matchLen; c++) {
+                        reels[c][linePattern[c]] = winSym;
+                    }
+                }
+
+                for (let c = 0; c < 5; c++) {
+                    if (reels[c].some(s => s.isWild)) {
+                        const mults = [2, 3, 5];
+                        const chosenMult = mults[Math.floor(Math.random() * mults.length)];
+                        wildCols.push({ col: c, mult: chosenMult });
+                        for (let r = 0; r < 3; r++) reels[c][r] = SYMBOLS[0]; 
+                    }
+                }
+
+                const winData = this.calculateWins(reels, wildCols);
+                return { 
+                    win: winData.totalWin > 0, 
+                    payout: (backendResult && backendResult.payout > 0) ? backendResult.payout : winData.totalWin, 
+                    reels: reels, 
+                    wildCols: wildCols, 
+                    winningLines: winData.winningLines 
+                };
+            }
+
+            calculateWins(reels, wildCols) {
+                let totalWin = 0;
+                let winningLinesData = [];
+                const scale = this.currentBet / 3;
+
+                PAYLINES.forEach((linePattern, lineIdx) => {
+                    let firstSym = reels[0][linePattern[0]];
+                    let targetSym = firstSym;
+
+                    if (targetSym.isWild) targetSym = reels[1][linePattern[1]];
+                    if (targetSym.isWild) targetSym = reels[2][linePattern[2]];
+
+                    if (targetSym && !targetSym.isStar && !targetSym.isDollar) {
+                        let matchCount = 0;
+                        for (let c = 0; c < 5; c++) {
+                            const current = reels[c][linePattern[c]];
+                            if (current.id === targetSym.id || current.isWild) {
+                                matchCount++;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if (targetSym.pays && targetSym.pays[matchCount]) {
+                            let lineWin = targetSym.pays[matchCount] * scale;
+                            wildCols.forEach(w => {
+                                if (w.col < matchCount) lineWin *= w.mult;
+                            });
+                            totalWin += lineWin;
+                            winningLinesData.push({ lineIdx, matchCount });
+                        }
+                    }
+                });
+
+                let starCount = 0;
+                [0, 2, 4].forEach(c => {
+                    if (reels[c].some(s => s.isStar)) starCount++;
+                });
+                if (starCount === 3) totalWin += 60 * scale;
+
+                let dollarCount = 0;
+                for (let c = 0; c < 5; c++) {
+                    dollarCount += reels[c].filter(s => s.isDollar).length;
+                }
+                if (SYMBOLS[6].pays[dollarCount]) totalWin += SYMBOLS[6].pays[dollarCount] * scale;
+
+                return { totalWin, winningLines: winningLinesData };
+            }
+
+            async processResult(data) {
+                if (data.wildCols && data.wildCols.length > 0) {
+                    data.wildCols.forEach(w => {
+                        this.expandStandingBull(w.col, w.mult);
+                        gameAudio.bullDrop();
+                    });
+                }
+
+                if (data.win && data.payout > 0) {
+                    this.highlightWinningSymbols(data.winningLines);
+                    this.drawWinningPaylines(data.winningLines);
+                    
+                    this.showWinBanner(`ربحت ${data.payout.toFixed(2)} NPS`);
+                    if (data.payout >= this.currentBet * 50) gameAudio.bigWin();
+                    else gameAudio.normalWin();
+                    this.balance += data.payout;
+                    this.updateBalanceUI();
+
+                    // تأكيد إنهاء الجولة وإضافة الربح للباك إند
+                    try {
+                        await fetch('/api/game/finish', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ round_id: this.currentRoundId })
+                        });
+                    } catch(e) {}
+                }
+
+                if (this.autoSpinsLeft > 0) {
+                    setTimeout(() => this.startSpin(), this.speedLevel === 3 ? 200 : 600);
+                }
+            }
+
+            expandStandingBull(colIdx, mult) {
+                const col = document.querySelectorAll('.reel-column')[colIdx];
+                if (!col) return;
+                const bullOverlay = document.createElement('div');
+                bullOverlay.className = 'standing-wild-overlay';
+                bullOverlay.innerHTML = `<div class="wild-multiplier-badge">x${mult}</div>`;
+                col.appendChild(bullOverlay);
+            }
+
+            highlightWinningSymbols(winningLines) {
+                winningLines.forEach(wl => {
+                    const linePattern = PAYLINES[wl.lineIdx];
+                    for (let c = 0; c < wl.matchCount; c++) {
+                        const rowIdx = linePattern[c];
+                        const strip = document.getElementById(`strip${c}`);
+                        if (strip && strip.children[rowIdx]) {
+                            strip.children[rowIdx].classList.add('winning-symbol');
+                        }
+                    }
+                });
+            }
+
+            drawWinningPaylines(winningLines) {
+                const svg = document.getElementById('payline-canvas');
+                svg.innerHTML = '';
+                winningLines.forEach(wl => {
+                    const linePattern = PAYLINES[wl.lineIdx];
+                    let points = [];
+                    for (let c = 0; c < wl.matchCount; c++) {
+                        const x = (c + 0.5) * (100 / 5);
+                        const y = (linePattern[c] + 0.5) * (100 / 3);
+                        points.push(`${x}%,${y}%`);
+                    }
+                    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                    polyline.setAttribute('points', points.join(' '));
+                    polyline.setAttribute('stroke', '#ffe600');
+                    polyline.setAttribute('stroke-width', '4.5');
+                    polyline.setAttribute('fill', 'none');
+                    polyline.setAttribute('filter', 'drop-shadow(0 0 8px #ff0000)');
+                    svg.appendChild(polyline);
+                });
+            }
+
+            clearWinningEffects() {
+                document.querySelectorAll('.standing-wild-overlay').forEach(el => el.remove());
+                document.querySelectorAll('.symbol-cell').forEach(cell => cell.classList.remove('winning-symbol'));
+                document.getElementById('payline-canvas').innerHTML = '';
+            }
+
+            showWinBanner(text) {
+                const banner = document.getElementById('winBanner');
+                banner.innerText = text;
+                banner.classList.add('active');
+            }
+
+            hideWinBanner() {
+                document.getElementById('winBanner').classList.remove('active');
+            }
+
+            updateBalanceUI() {
+                document.getElementById('balanceDisplay').innerText = `Balance ${this.balance.toFixed(1)} NPS`;
+            }
+
+            openAutoModal() { document.getElementById('autoModal').style.display = 'flex'; }
+            setAutoSpins(count) {
+                this.autoSpinsLeft = count;
+                this.closeModal('autoModal');
+                if (!this.isSpinning) this.startSpin();
+            }
+
+            openBuyBonusModal() {
+                const grid = document.getElementById('buyBonusOptionsGrid');
+                grid.innerHTML = `
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(50)"><div class="option-card-title">Single Wild</div><div class="option-card-price">${(this.currentBet * 50)} NPS</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(100)"><div class="option-card-title">Random Wild</div><div class="option-card-price">${(this.currentBet * 100)} NPS</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(150)"><div class="option-card-title">Double Wild</div><div class="option-card-price">${(this.currentBet * 150)} NPS</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(350)"><div class="option-card-title">Triple Wild</div><div class="option-card-price">${(this.currentBet * 350)} NPS</div></div>
+                `;
+                document.getElementById('buyBonusModal').style.display = 'flex';
+            }
+
+            executeBuyBonus(mult) {
+                const cost = this.currentBet * mult;
+                if (this.balance < cost) {
+                    alert('الرصيد غير كافٍ لشراء هذه المكافأة!');
+                    return;
+                }
+                this.balance -= cost;
                 this.updateBalanceUI();
+                this.closeModal('buyBonusModal');
+                this.autoSpinsLeft = 5;
+                if (!this.isSpinning) this.startSpin();
             }
+
+            openMenu() { document.getElementById('rulesModal').style.display = 'flex'; }
+            closeModal(id) { document.getElementById(id).style.display = 'none'; }
         }
 
-        const finalResult = this.generateControlledResult(backendResult,isBonusRound);
-        const spinPromises=[];
-        for(let col=0; col<5; col++) spinPromises.push(this.spinColumn(col,finalResult.reels[col]));
-        await Promise.all(spinPromises);
-        this.isSpinning=false;
-        await this.processResult(finalResult,isBonusRound);
-    }
+        const slotEngine = new SlotEngine();
 
-    async spinColumn(colIdx,targetSymbols){
-        const strip=document.getElementById(`strip${colIdx}`);
-        if(!strip) return;
-        strip.classList.add('reel-spinning');
-        const baseDuration=this.speedLevel===3?420:(this.speedLevel===2?760:1250);
-        const stagger=this.speedLevel===3?110:(this.speedLevel===2?180:260);
-        const duration=baseDuration+colIdx*stagger;
-        const started=performance.now();
-        gameAudio.spinStart();
-        let lastTick=0;
-        while(performance.now()-started<duration && !this.forceStopRequested){
-            strip.insertBefore(this.createSymbolElement(this.getSafeRandomSymbol()),strip.firstChild);
-            while(strip.children.length>7) strip.removeChild(strip.lastChild);
-            const now=performance.now();
-            if(now-lastTick>75){gameAudio.reelTick();lastTick=now;}
-            await new Promise(r=>setTimeout(r,this.speedLevel===3?18:(this.speedLevel===2?28:42)));
-        }
-        strip.innerHTML='';
-        this.gridMatrix[colIdx]=targetSymbols;
-        targetSymbols.forEach(sym=>strip.appendChild(this.createSymbolElement(sym)));
-        strip.classList.remove('reel-spinning');
-        gameAudio.reelStop();
-        if(targetSymbols.some(s=>s.isWild)) gameAudio.bullDrop();
-    }
+        window.addEventListener('DOMContentLoaded', () => {
+            let progress = 0;
+            const fill = document.getElementById('progressFill');
+            const text = document.getElementById('progressText');
 
-    chooseBonusBullCount(){
-        const mode=this.bonusMode || 'auto';
-        if(mode==='single') return 1;
-        if(mode==='double') return 2;
-        if(mode==='triple') return 3;
-        const r=Math.random();
-        if(r<0.80) return 1;
-        if(r<0.97) return 2;
-        return 3;
-    }
+            const timer = setInterval(() => {
+                progress += 10;
+                fill.style.width = `${Math.min(progress, 100)}%`;
+                text.innerText = `${Math.floor(Math.min(progress, 100))}%`;
 
-    generateControlledResult(backendResult,isBonusRound=false){
-        const reels=[[],[],[],[],[]];
-        const wildCols=[];
-        let forcedCols=[];
-        if(isBonusRound){
-            const count=this.chooseBonusBullCount();
-            const choices=[0,1,2,3,4].sort(()=>Math.random()-.5);
-            forcedCols=choices.slice(0,count);
-        } else {
-            const r=Math.random();
-            const count=r<0.035?1:(r<0.040?2:(r<0.041?3:0));
-            const choices=[0,1,2,3,4].sort(()=>Math.random()-.5);
-            forcedCols=choices.slice(0,count);
-        }
-
-        for(let c=0;c<5;c++){
-            for(let r=0;r<3;r++) reels[c].push(this.getSafeRandomSymbol());
-        }
-
-        if(backendResult && backendResult.win && Number(backendResult.payout)>0 && !isBonusRound){
-            const winSym=SYMBOLS[1];
-            const matchLen=Math.min(5,3+Math.floor(Math.random()*3));
-            const lineIdx=Math.floor(Math.random()*PAYLINES.length);
-            const pattern=PAYLINES[lineIdx];
-            for(let c=0;c<matchLen;c++) reels[c][pattern[c]]=winSym;
-        }
-
-        forcedCols.forEach(c=>{
-            const mult=[2,3,5][Math.floor(Math.random()*3)];
-            wildCols.push({col:c,mult});
-            for(let r=0;r<3;r++) reels[c][r]=SYMBOLS[0];
-        });
-
-        const winData=this.calculateWins(reels,wildCols);
-        let payout=backendResult && Number(backendResult.payout)>0 ? Number(backendResult.payout) : winData.totalWin;
-        if(isBonusRound && this.bonusPurchaseCap>0){
-            const remaining=Math.max(0,this.bonusPurchaseCap-this.bonusPayoutTotal);
-            payout=Math.min(payout,remaining);
-        }
-        return {win:payout>0,payout,reels,wildCols,winningLines:winData.winningLines,isBonusRound};
-    }
-
-    calculateWins(reels,wildCols){
-        let totalWin=0;
-        const winningLinesData=[];
-        const scale=this.currentBet/3;
-        PAYLINES.forEach((linePattern,lineIdx)=>{
-            let targetSym=reels[0][linePattern[0]];
-            if(targetSym.isWild) targetSym=reels[1][linePattern[1]];
-            if(targetSym.isWild) targetSym=reels[2][linePattern[2]];
-            if(targetSym && !targetSym.isStar && !targetSym.isDollar){
-                let matchCount=0;
-                for(let c=0;c<5;c++){
-                    const current=reels[c][linePattern[c]];
-                    if(current.id===targetSym.id || current.isWild) matchCount++; else break;
+                if (progress >= 100) {
+                    clearInterval(timer);
+                    setTimeout(() => {
+                        document.getElementById('loader-screen').style.display = 'none';
+                        document.getElementById('game-stage').style.display = 'block';
+                        slotEngine.init();
+                    }, 150);
                 }
-                if(targetSym.pays && targetSym.pays[matchCount]){
-                    let lineWin=targetSym.pays[matchCount]*scale;
-                    wildCols.forEach(w=>{if(w.col<matchCount) lineWin*=w.mult;});
-                    totalWin+=lineWin;
-                    winningLinesData.push({lineIdx,matchCount});
-                }
-            }
+            }, 50);
         });
-        let starCount=0;
-        [0,2,4].forEach(c=>{if(reels[c].some(s=>s.isStar)) starCount++;});
-        if(starCount===3) totalWin+=60*scale;
-        let dollarCount=0;
-        for(let c=0;c<5;c++) dollarCount+=reels[c].filter(s=>s.isDollar).length;
-        if(SYMBOLS[6].pays[dollarCount]) totalWin+=SYMBOLS[6].pays[dollarCount]*scale;
-        return {totalWin,winningLines:winningLinesData};
-    }
-
-    async processResult(data,isBonusRound=false){
-        if(data.wildCols && data.wildCols.length) data.wildCols.forEach(w=>this.expandStandingBull(w.col,w.mult));
-        if(data.win && data.payout>0){
-            this.highlightWinningSymbols(data.winningLines);
-            this.drawWinningPaylines(data.winningLines);
-            const isBig=data.payout>=this.currentBet*10;
-            (isBig?gameAudio.bigWin:gameAudio.normalWin).call(gameAudio);
-            await this.animateWinCount(data.payout);
-            this.balance+=data.payout;
-            if(isBonusRound) this.bonusPayoutTotal+=data.payout;
-            this.updateBalanceUI();
-            try{
-                if(this.currentRoundId && !isBonusRound) await fetch('/api/game/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round_id:this.currentRoundId})});
-            }catch(e){}
-        }
-        if(this.bonusRounds>0){
-            setTimeout(()=>this.startSpin(),650);
-        } else if(this.autoSpinsLeft>0){
-            setTimeout(()=>this.startSpin(),this.speedLevel===3?220:650);
-        } else if(isBonusRound){
-            this.bonusPurchaseCap=0;
-            this.bonusPayoutTotal=0;
-        }
-    }
-
-    animateWinCount(amount){
-        const banner=document.getElementById('winBanner');
-        if(!banner) return Promise.resolve();
-        banner.classList.add('active');
-        const duration=Math.min(2600,700+amount*3);
-        const start=performance.now();
-        return new Promise(resolve=>{
-            const tick=now=>{
-                const p=Math.min(1,(now-start)/duration);
-                const eased=1-Math.pow(1-p,3);
-                banner.innerText=`ربحت ${(amount*eased).toFixed(2)} NPS`;
-                if(p<1) requestAnimationFrame(tick); else {banner.innerText=`ربحت ${amount.toFixed(2)} NPS`;resolve();}
-            };
-            requestAnimationFrame(tick);
-        });
-    }
-
-    expandStandingBull(colIdx,mult){
-        const col=document.querySelectorAll('.reel-column')[colIdx];
-        if(!col) return;
-        const old=col.querySelector('.standing-wild-overlay'); if(old) old.remove();
-        const overlay=document.createElement('div');
-        overlay.className='standing-wild-overlay';
-        overlay.innerHTML=`<div class="wild-multiplier-badge">x${mult}</div>`;
-        col.appendChild(overlay);
-    }
-
-    highlightWinningSymbols(winningLines){
-        (winningLines||[]).forEach(wl=>{
-            const pattern=PAYLINES[wl.lineIdx];
-            for(let c=0;c<wl.matchCount;c++){
-                const strip=document.getElementById(`strip${c}`);
-                if(strip && strip.children[pattern[c]]) strip.children[pattern[c]].classList.add('winning-symbol');
-            }
-        });
-    }
-
-    drawWinningPaylines(winningLines){
-        const svg=document.getElementById('payline-canvas');
-        if(!svg) return;
-        svg.innerHTML='';
-        (winningLines||[]).forEach(wl=>{
-            const pattern=PAYLINES[wl.lineIdx];
-            const points=[];
-            for(let c=0;c<wl.matchCount;c++) points.push(`${(c+.5)*20}%,${(pattern[c]+.5)*(100/3)}%`);
-            const line=document.createElementNS('http://www.w3.org/2000/svg','polyline');
-            line.setAttribute('points',points.join(' '));line.setAttribute('stroke','#ffe600');line.setAttribute('stroke-width','4.5');line.setAttribute('fill','none');line.setAttribute('filter','drop-shadow(0 0 8px #ff0000)');
-            svg.appendChild(line);
-        });
-    }
-
-    clearWinningEffects(){
-        document.querySelectorAll('.standing-wild-overlay').forEach(el=>el.remove());
-        document.querySelectorAll('.symbol-cell').forEach(el=>el.classList.remove('winning-symbol'));
-        const svg=document.getElementById('payline-canvas');if(svg) svg.innerHTML='';
-    }
-    showWinBanner(text){const b=document.getElementById('winBanner');if(b){b.innerText=text;b.classList.add('active');}}
-    hideWinBanner(){const b=document.getElementById('winBanner');if(b)b.classList.remove('active');}
-
-    openAutoModal(){document.getElementById('autoModal').style.display='flex';}
-    setAutoSpins(count){this.autoSpinsLeft=count;this.closeModal('autoModal');if(!this.isSpinning)this.startSpin();}
-
-    openBuyBonusModal(){
-        const grid=document.getElementById('buyBonusOptionsGrid');
-        const c=this.currentBet;
-        grid.innerHTML=`
-          <div class="option-card" onclick="slotEngine.executeBuyBonus(50,'single')"><div class="option-card-title">ثور واحد</div><div class="option-card-price">${c*50} NPS</div></div>
-          <div class="option-card" onclick="slotEngine.executeBuyBonus(100,'double')"><div class="option-card-title">ثوران</div><div class="option-card-price">${c*100} NPS</div></div>
-          <div class="option-card" onclick="slotEngine.executeBuyBonus(150,'triple')"><div class="option-card-title">3 ثيران</div><div class="option-card-price">${c*150} NPS</div></div>
-          <div class="option-card" onclick="slotEngine.executeBuyBonus(75,'auto')"><div class="option-card-title">تلقائي</div><div class="option-card-price">${c*75} NPS</div></div>`;
-        document.getElementById('buyBonusModal').style.display='flex';
-    }
-
-    executeBuyBonus(mult,mode='auto'){
-        const cost=this.currentBet*mult;
-        if(this.balance<cost){alert('الرصيد غير كافٍ لشراء هذه المكافأة!');return;}
-        gameAudio.init();gameAudio.button();
-        this.balance-=cost;this.updateBalanceUI();this.closeModal('buyBonusModal');
-        this.bonusRounds=5;this.autoSpinsLeft=0;this.bonusMode=mode;
-        this.bonusPurchaseCost=cost;this.bonusPurchaseCap=cost*5;this.bonusPayoutTotal=0;
-        if(!this.isSpinning)this.startSpin();
-    }
-
-    openMenu(){document.getElementById('rulesModal').style.display='flex';}
-    closeModal(id){const el=document.getElementById(id);if(el)el.style.display='none';}
-}
-
-const slotEngine=new SlotEngine();
-
-window.addEventListener('DOMContentLoaded',()=>{
-    const fill=document.getElementById('progressFill');
-    const text=document.getElementById('progressText');
-    const loader=document.getElementById('loader-screen');
-    const stage=document.getElementById('game-stage');
-    const duration=8000+Math.random()*22000;
-    const started=performance.now();
-    function frame(now){
-        const p=Math.min(1,(now-started)/duration);
-        const eased=p<.85?p*.94:.80+(p-.85)/.15*.20;
-        const value=Math.min(100,Math.floor(eased*100));
-        if(fill)fill.style.width=value+'%';
-        if(text)text.innerText=value+'%';
-        if(p<1)requestAnimationFrame(frame);else{
-            if(fill)fill.style.width='100%';if(text)text.innerText='100%';
-            setTimeout(async()=>{
-                if(loader)loader.style.display='none';
-                if(stage)stage.style.display='block';
-                try{await slotEngine.init();}catch(e){console.error('Game init failed:',e);}
-            },180);
-        }
-    }
-    requestAnimationFrame(frame);
-});
-</script>
+    </script>
 </body>
 </html>
