@@ -2054,6 +2054,11 @@ class SlotEngine {
         this.bonusRounds =
             0;
 
+        this.bonusMode = 'auto';
+        this.bonusPurchaseCost = 0;
+        this.bonusPurchaseCap = 0;
+        this.bonusPayoutTotal = 0;
+
     }
 
 
@@ -2515,15 +2520,304 @@ class SlotEngine {
        بدء الجولة
     ===================================================== */
 
+
     async startSpin(){
+        if(this.isSpinning) return;
+        if(this.balance < this.currentBet){
+            alert('الرصيد غير كافٍ في حساب الموقع للعب!');
+            this.autoSpinsLeft = 0;
+            return;
+        }
 
-        if(
-            this.balance <
-            this.currentBet
-        ){
+        gameAudio.init();
+        this.isSpinning = true;
+        this.forceStopRequested = false;
+        this.clearWinningEffects();
+        this.hideWinBanner();
 
-            alert(
-                'الرصيد غير كافٍ في حساب الموقع للعب!'
-            );
+        const isBonusRound = this.bonusRounds > 0;
+        if(isBonusRound){
+            this.bonusRounds--;
+            this.autoSpinsLeft = this.bonusRounds;
+        } else if(this.autoSpinsLeft > 0){
+            this.autoSpinsLeft--;
+        }
 
-            this
+        let backendResult = null;
+        if(!isBonusRound){
+            try{
+                const response = await fetch('/api/play',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({game_name:'golden_bull',bet_amount:this.currentBet})
+                });
+                backendResult = await response.json();
+                if(backendResult && backendResult.status === 'success'){
+                    this.currentRoundId = backendResult.round_id;
+                    this.balance = Number(backendResult.new_balance ?? this.balance);
+                    this.updateBalanceUI();
+                }
+            }catch(err){
+                this.balance -= this.currentBet;
+                this.updateBalanceUI();
+            }
+        }
+
+        const finalResult = this.generateControlledResult(backendResult,isBonusRound);
+        const spinPromises=[];
+        for(let col=0; col<5; col++) spinPromises.push(this.spinColumn(col,finalResult.reels[col]));
+        await Promise.all(spinPromises);
+        this.isSpinning=false;
+        await this.processResult(finalResult,isBonusRound);
+    }
+
+    async spinColumn(colIdx,targetSymbols){
+        const strip=document.getElementById(`strip${colIdx}`);
+        if(!strip) return;
+        strip.classList.add('reel-spinning');
+        const baseDuration=this.speedLevel===3?420:(this.speedLevel===2?760:1250);
+        const stagger=this.speedLevel===3?110:(this.speedLevel===2?180:260);
+        const duration=baseDuration+colIdx*stagger;
+        const started=performance.now();
+        gameAudio.spinStart();
+        let lastTick=0;
+        while(performance.now()-started<duration && !this.forceStopRequested){
+            strip.insertBefore(this.createSymbolElement(this.getSafeRandomSymbol()),strip.firstChild);
+            while(strip.children.length>7) strip.removeChild(strip.lastChild);
+            const now=performance.now();
+            if(now-lastTick>75){gameAudio.reelTick();lastTick=now;}
+            await new Promise(r=>setTimeout(r,this.speedLevel===3?18:(this.speedLevel===2?28:42)));
+        }
+        strip.innerHTML='';
+        this.gridMatrix[colIdx]=targetSymbols;
+        targetSymbols.forEach(sym=>strip.appendChild(this.createSymbolElement(sym)));
+        strip.classList.remove('reel-spinning');
+        gameAudio.reelStop();
+        if(targetSymbols.some(s=>s.isWild)) gameAudio.bullDrop();
+    }
+
+    chooseBonusBullCount(){
+        const mode=this.bonusMode || 'auto';
+        if(mode==='single') return 1;
+        if(mode==='double') return 2;
+        if(mode==='triple') return 3;
+        const r=Math.random();
+        if(r<0.80) return 1;
+        if(r<0.97) return 2;
+        return 3;
+    }
+
+    generateControlledResult(backendResult,isBonusRound=false){
+        const reels=[[],[],[],[],[]];
+        const wildCols=[];
+        let forcedCols=[];
+        if(isBonusRound){
+            const count=this.chooseBonusBullCount();
+            const choices=[0,1,2,3,4].sort(()=>Math.random()-.5);
+            forcedCols=choices.slice(0,count);
+        } else {
+            const r=Math.random();
+            const count=r<0.035?1:(r<0.040?2:(r<0.041?3:0));
+            const choices=[0,1,2,3,4].sort(()=>Math.random()-.5);
+            forcedCols=choices.slice(0,count);
+        }
+
+        for(let c=0;c<5;c++){
+            for(let r=0;r<3;r++) reels[c].push(this.getSafeRandomSymbol());
+        }
+
+        if(backendResult && backendResult.win && Number(backendResult.payout)>0 && !isBonusRound){
+            const winSym=SYMBOLS[1];
+            const matchLen=Math.min(5,3+Math.floor(Math.random()*3));
+            const lineIdx=Math.floor(Math.random()*PAYLINES.length);
+            const pattern=PAYLINES[lineIdx];
+            for(let c=0;c<matchLen;c++) reels[c][pattern[c]]=winSym;
+        }
+
+        forcedCols.forEach(c=>{
+            const mult=[2,3,5][Math.floor(Math.random()*3)];
+            wildCols.push({col:c,mult});
+            for(let r=0;r<3;r++) reels[c][r]=SYMBOLS[0];
+        });
+
+        const winData=this.calculateWins(reels,wildCols);
+        let payout=backendResult && Number(backendResult.payout)>0 ? Number(backendResult.payout) : winData.totalWin;
+        if(isBonusRound && this.bonusPurchaseCap>0){
+            const remaining=Math.max(0,this.bonusPurchaseCap-this.bonusPayoutTotal);
+            payout=Math.min(payout,remaining);
+        }
+        return {win:payout>0,payout,reels,wildCols,winningLines:winData.winningLines,isBonusRound};
+    }
+
+    calculateWins(reels,wildCols){
+        let totalWin=0;
+        const winningLinesData=[];
+        const scale=this.currentBet/3;
+        PAYLINES.forEach((linePattern,lineIdx)=>{
+            let targetSym=reels[0][linePattern[0]];
+            if(targetSym.isWild) targetSym=reels[1][linePattern[1]];
+            if(targetSym.isWild) targetSym=reels[2][linePattern[2]];
+            if(targetSym && !targetSym.isStar && !targetSym.isDollar){
+                let matchCount=0;
+                for(let c=0;c<5;c++){
+                    const current=reels[c][linePattern[c]];
+                    if(current.id===targetSym.id || current.isWild) matchCount++; else break;
+                }
+                if(targetSym.pays && targetSym.pays[matchCount]){
+                    let lineWin=targetSym.pays[matchCount]*scale;
+                    wildCols.forEach(w=>{if(w.col<matchCount) lineWin*=w.mult;});
+                    totalWin+=lineWin;
+                    winningLinesData.push({lineIdx,matchCount});
+                }
+            }
+        });
+        let starCount=0;
+        [0,2,4].forEach(c=>{if(reels[c].some(s=>s.isStar)) starCount++;});
+        if(starCount===3) totalWin+=60*scale;
+        let dollarCount=0;
+        for(let c=0;c<5;c++) dollarCount+=reels[c].filter(s=>s.isDollar).length;
+        if(SYMBOLS[6].pays[dollarCount]) totalWin+=SYMBOLS[6].pays[dollarCount]*scale;
+        return {totalWin,winningLines:winningLinesData};
+    }
+
+    async processResult(data,isBonusRound=false){
+        if(data.wildCols && data.wildCols.length) data.wildCols.forEach(w=>this.expandStandingBull(w.col,w.mult));
+        if(data.win && data.payout>0){
+            this.highlightWinningSymbols(data.winningLines);
+            this.drawWinningPaylines(data.winningLines);
+            const isBig=data.payout>=this.currentBet*10;
+            (isBig?gameAudio.bigWin:gameAudio.normalWin).call(gameAudio);
+            await this.animateWinCount(data.payout);
+            this.balance+=data.payout;
+            if(isBonusRound) this.bonusPayoutTotal+=data.payout;
+            this.updateBalanceUI();
+            try{
+                if(this.currentRoundId && !isBonusRound) await fetch('/api/game/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({round_id:this.currentRoundId})});
+            }catch(e){}
+        }
+        if(this.bonusRounds>0){
+            setTimeout(()=>this.startSpin(),650);
+        } else if(this.autoSpinsLeft>0){
+            setTimeout(()=>this.startSpin(),this.speedLevel===3?220:650);
+        } else if(isBonusRound){
+            this.bonusPurchaseCap=0;
+            this.bonusPayoutTotal=0;
+        }
+    }
+
+    animateWinCount(amount){
+        const banner=document.getElementById('winBanner');
+        if(!banner) return Promise.resolve();
+        banner.classList.add('active');
+        const duration=Math.min(2600,700+amount*3);
+        const start=performance.now();
+        return new Promise(resolve=>{
+            const tick=now=>{
+                const p=Math.min(1,(now-start)/duration);
+                const eased=1-Math.pow(1-p,3);
+                banner.innerText=`ربحت ${(amount*eased).toFixed(2)} NPS`;
+                if(p<1) requestAnimationFrame(tick); else {banner.innerText=`ربحت ${amount.toFixed(2)} NPS`;resolve();}
+            };
+            requestAnimationFrame(tick);
+        });
+    }
+
+    expandStandingBull(colIdx,mult){
+        const col=document.querySelectorAll('.reel-column')[colIdx];
+        if(!col) return;
+        const old=col.querySelector('.standing-wild-overlay'); if(old) old.remove();
+        const overlay=document.createElement('div');
+        overlay.className='standing-wild-overlay';
+        overlay.innerHTML=`<div class="wild-multiplier-badge">x${mult}</div>`;
+        col.appendChild(overlay);
+    }
+
+    highlightWinningSymbols(winningLines){
+        (winningLines||[]).forEach(wl=>{
+            const pattern=PAYLINES[wl.lineIdx];
+            for(let c=0;c<wl.matchCount;c++){
+                const strip=document.getElementById(`strip${c}`);
+                if(strip && strip.children[pattern[c]]) strip.children[pattern[c]].classList.add('winning-symbol');
+            }
+        });
+    }
+
+    drawWinningPaylines(winningLines){
+        const svg=document.getElementById('payline-canvas');
+        if(!svg) return;
+        svg.innerHTML='';
+        (winningLines||[]).forEach(wl=>{
+            const pattern=PAYLINES[wl.lineIdx];
+            const points=[];
+            for(let c=0;c<wl.matchCount;c++) points.push(`${(c+.5)*20}%,${(pattern[c]+.5)*(100/3)}%`);
+            const line=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+            line.setAttribute('points',points.join(' '));line.setAttribute('stroke','#ffe600');line.setAttribute('stroke-width','4.5');line.setAttribute('fill','none');line.setAttribute('filter','drop-shadow(0 0 8px #ff0000)');
+            svg.appendChild(line);
+        });
+    }
+
+    clearWinningEffects(){
+        document.querySelectorAll('.standing-wild-overlay').forEach(el=>el.remove());
+        document.querySelectorAll('.symbol-cell').forEach(el=>el.classList.remove('winning-symbol'));
+        const svg=document.getElementById('payline-canvas');if(svg) svg.innerHTML='';
+    }
+    showWinBanner(text){const b=document.getElementById('winBanner');if(b){b.innerText=text;b.classList.add('active');}}
+    hideWinBanner(){const b=document.getElementById('winBanner');if(b)b.classList.remove('active');}
+
+    openAutoModal(){document.getElementById('autoModal').style.display='flex';}
+    setAutoSpins(count){this.autoSpinsLeft=count;this.closeModal('autoModal');if(!this.isSpinning)this.startSpin();}
+
+    openBuyBonusModal(){
+        const grid=document.getElementById('buyBonusOptionsGrid');
+        const c=this.currentBet;
+        grid.innerHTML=`
+          <div class="option-card" onclick="slotEngine.executeBuyBonus(50,'single')"><div class="option-card-title">ثور واحد</div><div class="option-card-price">${c*50} NPS</div></div>
+          <div class="option-card" onclick="slotEngine.executeBuyBonus(100,'double')"><div class="option-card-title">ثوران</div><div class="option-card-price">${c*100} NPS</div></div>
+          <div class="option-card" onclick="slotEngine.executeBuyBonus(150,'triple')"><div class="option-card-title">3 ثيران</div><div class="option-card-price">${c*150} NPS</div></div>
+          <div class="option-card" onclick="slotEngine.executeBuyBonus(75,'auto')"><div class="option-card-title">تلقائي</div><div class="option-card-price">${c*75} NPS</div></div>`;
+        document.getElementById('buyBonusModal').style.display='flex';
+    }
+
+    executeBuyBonus(mult,mode='auto'){
+        const cost=this.currentBet*mult;
+        if(this.balance<cost){alert('الرصيد غير كافٍ لشراء هذه المكافأة!');return;}
+        gameAudio.init();gameAudio.button();
+        this.balance-=cost;this.updateBalanceUI();this.closeModal('buyBonusModal');
+        this.bonusRounds=5;this.autoSpinsLeft=0;this.bonusMode=mode;
+        this.bonusPurchaseCost=cost;this.bonusPurchaseCap=cost*5;this.bonusPayoutTotal=0;
+        if(!this.isSpinning)this.startSpin();
+    }
+
+    openMenu(){document.getElementById('rulesModal').style.display='flex';}
+    closeModal(id){const el=document.getElementById(id);if(el)el.style.display='none';}
+}
+
+const slotEngine=new SlotEngine();
+
+window.addEventListener('DOMContentLoaded',()=>{
+    const fill=document.getElementById('progressFill');
+    const text=document.getElementById('progressText');
+    const loader=document.getElementById('loader-screen');
+    const stage=document.getElementById('game-stage');
+    const duration=8000+Math.random()*22000;
+    const started=performance.now();
+    function frame(now){
+        const p=Math.min(1,(now-started)/duration);
+        const eased=p<.85?p*.94:.80+(p-.85)/.15*.20;
+        const value=Math.min(100,Math.floor(eased*100));
+        if(fill)fill.style.width=value+'%';
+        if(text)text.innerText=value+'%';
+        if(p<1)requestAnimationFrame(frame);else{
+            if(fill)fill.style.width='100%';if(text)text.innerText='100%';
+            setTimeout(async()=>{
+                if(loader)loader.style.display='none';
+                if(stage)stage.style.display='block';
+                try{await slotEngine.init();}catch(e){console.error('Game init failed:',e);}
+            },180);
+        }
+    }
+    requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>
