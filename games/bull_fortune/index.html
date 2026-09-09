@@ -212,9 +212,8 @@ html,body{
     z-index:10;
 
     overflow:hidden;
-
+    isolation:isolate;
     border-radius:8px;
-
     touch-action:none;
 }
 
@@ -236,15 +235,19 @@ html,body{
     top:0;
 
     width:100%;
+    height:auto;
 
     will-change:transform;
 
-    transform:translateY(0);
+    transform:translate3d(0,0,0);
+    backface-visibility:hidden;
+    transform-style:preserve-3d;
 }
 
 .symbol-cell{
     width:100%;
-    height:33.333333%;
+    height:calc(100% / 3);
+    min-height:0;
 
     display:flex;
     align-items:center;
@@ -284,8 +287,12 @@ html,body{
     drop-shadow(0 0 5px #ffb700);
 
     transform:
-    scale(.96)
+    scale(.94)
     skewY(2deg);
+}
+
+.reel-spinning .symbol-cell{
+    will-change:transform;
 }
 
 .reel-column.reel-active{
@@ -310,15 +317,13 @@ html,body{
 
 @keyframes reelStopBounce{
     0%{
-        transform:translateY(-8px);
+        transform:translate3d(0,-10px,0);
     }
-
-    60%{
-        transform:translateY(3px);
+    55%{
+        transform:translate3d(0,3px,0);
     }
-
     100%{
-        transform:translateY(0);
+        transform:translate3d(0,0,0);
     }
 }
 
@@ -443,20 +448,37 @@ html,body{
 
     0%{
         opacity:0;
-
         transform:
-        translateY(-110%)
-        rotateX(-12deg)
-        scale(.78);
+        translate3d(0,-105%,0)
+        rotateX(-18deg)
+        rotateY(-10deg)
+        scale(.42);
     }
 
-    55%{
+    48%{
         opacity:1;
-
         transform:
-        translateY(4%)
-        rotateX(4deg)
-        scale(1.06);
+        translate3d(0,1%,0)
+        rotateX(5deg)
+        rotateY(4deg)
+        scale(1.16);
+    }
+
+    72%{
+        transform:
+        translate3d(0,0,0)
+        rotateX(0)
+        rotateY(0)
+        scale(1.04);
+    }
+
+    100%{
+        opacity:1;
+        transform:
+        translate3d(0,0,0)
+        rotateX(0)
+        rotateY(0)
+        scale(1.10);
     }
 
     75%{
@@ -473,6 +495,26 @@ html,body{
         rotateX(0)
         scale(1);
     }
+}
+
+.standing-wild-overlay{
+    transform-origin:center bottom;
+    isolation:isolate;
+    clip-path:inset(0 round 8px);
+}
+
+.standing-wild-overlay > *{
+    position:relative;
+    z-index:3;
+}
+
+.standing-wild-overlay::before{
+    animation:bullShine 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes bullShine{
+    from{opacity:.35; transform:translateX(-8%);}
+    to{opacity:.85; transform:translateX(8%);}
 }
 
 .wild-multiplier-badge{
@@ -599,11 +641,11 @@ html,body{
 ===================================================== */
 
 #winBanner{
-    top:74.2%;
-    left:5%;
+    top:74.1%;
+    left:8%;
 
-    width:90%;
-    height:4.5%;
+    width:84%;
+    height:5.2%;
 
     opacity:0;
 
@@ -613,7 +655,8 @@ html,body{
 
     color:#fff200;
 
-    font-size:1.15rem;
+    font-size:1.22rem;
+    font-variant-numeric:tabular-nums;
 
     border:1.5px solid white;
     border-radius:13px;
@@ -648,17 +691,23 @@ html,body{
 ===================================================== */
 
 #balanceDisplay{
-    bottom:.95%;
-    left:30%;
+    bottom:3.15%;
+    left:14%;
 
-    width:40%;
-    height:2.2%;
+    width:72%;
+    min-height:2.8%;
 
-    color:#00ffcc;
-
-    font-size:.9rem;
-
-    letter-spacing:.5px;
+    color:#fff;
+    font-size:1.02rem;
+    font-weight:900;
+    letter-spacing:.3px;
+    font-variant-numeric:tabular-nums;
+    text-align:center;
+    padding:3px 10px;
+    border:1px solid rgba(255,215,0,.72);
+    border-radius:12px;
+    background:linear-gradient(180deg,rgba(0,0,0,.74),rgba(35,10,0,.78));
+    box-shadow:0 0 10px rgba(255,180,0,.28), inset 0 0 8px rgba(255,215,0,.12);
 }
 
 /* =====================================================
@@ -1218,7 +1267,7 @@ html,body{
     <div
         class="overlay-hud-text"
         id="balanceDisplay">
-        Balance 0.0 NPS
+        الرصيد: 0.00 NPS
     </div>
 
     <!-- الرهانات -->
@@ -1359,31 +1408,31 @@ html,body{
 
             <p>
                 🔥 الرقم 7:
-                2 = 3 |
-                3 = 15 |
-                4 = 75 |
-                5 = 1,500 NPS
+                2 = 1x |
+                3 = 4x |
+                4 = 20x |
+                5 = 500x
             </p>
 
             <p>
                 🍇 العنب والبطيخ:
-                3 = 12 |
-                4 = 36 |
-                5 = 210 NPS
+                3 = 4x |
+                4 = 25x |
+                5 = 60x
             </p>
 
             <p>
                 🔔 الجرس:
-                3 = 6 |
-                4 = 12 |
-                5 = 60 NPS
+                3 = 1.5x |
+                4 = 4x |
+                5 = 30x
             </p>
 
             <p>
                 🍊 الفواكه:
-                3 = 3 |
-                4 = 9 |
-                5 = 45 NPS
+                3 = 1x |
+                4 = 2x |
+                5 = 12x
             </p>
 
             <p>
@@ -1399,8 +1448,7 @@ html,body{
             <p>
                 🐂 الثور:
                 Wild نادر جداً،
-                ويمكن أن يظهر عمودياً
-                بمضاعف x2 أو x3 أو x5.
+                ولا يظهر إلا عند تحقق ربح؛ x5 محصور بمكافأة الثور.
             </p>
 
         </div>
@@ -1648,16 +1696,16 @@ html,body{
         /* 1. قائمة الرموز الـ 11 المعرفات */
         const SYMBOLS = [
             { id: 'bull', img: 'https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png', isWild: true },
-            { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 3, 3: 15, 4: 75, 5: 1500 } },
-            { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 12, 4: 36, 5: 210 } },
-            { id: 'melon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 12, 4: 36, 5: 210 } },
-            { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 6, 4: 12, 5: 60 } },
+            { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 1, 3: 4, 4: 20, 5: 500 } },
+            { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 4, 4: 25, 5: 60 } },
+            { id: 'melon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 4, 4: 25, 5: 60 } },
+            { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 1.5, 4: 4, 5: 30 } },
             { id: 'star', img: 'https://i.ibb.co/5g15MWM1/file-000000003d9c821091d4b307ceb26f02.png', isStar: true },
             { id: 'dollar', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', isDollar: true, pays: { 3: 15, 4: 60, 5: 300 } },
-            { id: 'cherry', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 3, 4: 9, 5: 45 } },
-            { id: 'orange', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 3, 4: 9, 5: 45 } },
-            { id: 'lemon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 3, 4: 9, 5: 45 } },
-            { id: 'plum', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', pays: { 3: 3, 4: 9, 5: 45 } }
+            { id: 'cherry', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 1, 4: 2, 5: 12 } },
+            { id: 'orange', img: 'https://i.ibb.co/9HxK8P6D/file-00000000e5748210a8c3d25eff1825fe.png', pays: { 3: 1, 4: 2, 5: 12 } },
+            { id: 'lemon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 1, 4: 2, 5: 12 } },
+            { id: 'plum', img: 'https://i.ibb.co/zhGFDnXs/file-00000000f08c8210aed8c4ebbe5f69a7.png', pays: { 3: 1, 4: 2, 5: 12 } }
         ];
 
         /* خطوط الربح العشرة الرسمية المطبقة والصحيحة */
@@ -1695,6 +1743,8 @@ html,body{
                 this.forceStopRequested = false;
                 this.speedLevel = 1;
                 this.autoSpinsLeft = 0;
+                this.bonusWildsRemaining = 0;
+                this.bonusWildMode = false;
 
                 this.gridMatrix = [[], [], [], [], []];
                 this.currentRoundId = null;
@@ -1771,9 +1821,9 @@ html,body{
                     }
                 }
 
-                if (currentBulls < 2 && Math.random() < 0.035) return SYMBOLS[0];
-                if ((col === 0 || col === 2 || col === 4) && currentStars < 3 && Math.random() < 0.04) return SYMBOLS[5];
-                if (currentDollars < 3 && Math.random() < 0.04) return SYMBOLS[6];
+                // الثور لا يظهر عشوائياً هنا؛ يظهر فقط عند نتيجة رابحة أو أثناء شراء مكافأة الثور.
+                if ((col === 0 || col === 2 || col === 4) && currentStars < 3 && Math.random() < 0.025) return SYMBOLS[5];
+                if (currentDollars < 3 && Math.random() < 0.025) return SYMBOLS[6];
 
                 const normalSymbols = [1, 2, 3, 4, 7, 8, 9, 10];
                 const randIdx = normalSymbols[Math.floor(Math.random() * normalSymbols.length)];
@@ -1842,19 +1892,19 @@ html,body{
                 if (this.balance < this.currentBet) {
                     alert('الرصيد غير كافٍ في حساب الموقع للعب! يرجى الشحن أولاً.');
                     this.autoSpinsLeft = 0;
+                    this.bonusWildsRemaining = 0;
+                    this.bonusWildMode = false;
                     return;
                 }
 
                 this.isSpinning = true;
                 this.forceStopRequested = false;
                 gameAudio.spinStart();
-
                 this.clearWinningEffects();
                 this.hideWinBanner();
 
                 if (this.autoSpinsLeft > 0) this.autoSpinsLeft--;
 
-                // إرسال كود اللعب للباك اند وتفعيل الخوارزمية
                 let backendResult = null;
                 try {
                     const response = await fetch('/api/play', {
@@ -1865,22 +1915,22 @@ html,body{
                     backendResult = await response.json();
                     if (backendResult.status === 'success') {
                         this.currentRoundId = backendResult.round_id;
-                        this.balance = backendResult.new_balance;
+                        this.balance = parseFloat(backendResult.new_balance);
                         this.updateBalanceUI();
                     }
                 } catch(err) {
-                    console.log("Direct play mode active", err);
+                    console.log('Direct play mode active', err);
                     this.balance -= this.currentBet;
                     this.updateBalanceUI();
                 }
 
                 const finalResult = this.generateControlledResult(backendResult);
 
+                // كل البكرات تبدأ معاً، ثم تتوقف بالتتابع: اليسار ← اليمين.
                 const spinPromises = [];
                 for (let col = 0; col < 5; col++) {
                     spinPromises.push(this.spinColumn(col, finalResult.reels[col]));
                 }
-
                 await Promise.all(spinPromises);
 
                 this.isSpinning = false;
@@ -1889,68 +1939,184 @@ html,body{
 
             async spinColumn(colIdx, targetSymbols) {
                 const strip = document.getElementById(`strip${colIdx}`);
+                const column = strip ? strip.parentElement : null;
+                if (!strip || !column) return;
+
                 strip.classList.add('reel-spinning');
+                column.classList.add('reel-active');
 
-                const startTime = Date.now();
-                const baseDelay = this.speedLevel === 3 ? 80 : (this.speedLevel === 2 ? 160 : 280);
-                const minDuration = 350 + (colIdx * baseDelay);
+                const speedFactor = this.speedLevel === 3 ? 0.72 : (this.speedLevel === 2 ? 0.86 : 1);
+                const baseDuration = 1180 * speedFactor;
+                const stopGap = 175 * speedFactor;
+                const duration = baseDuration + (colIdx * stopGap);
+                const cellHeight = Math.max(1, column.clientHeight / 3);
+                const randomCount = Math.max(18, Math.ceil(duration / (this.speedLevel === 3 ? 42 : 52)));
 
-                while (Date.now() - startTime < minDuration && !this.forceStopRequested) {
-                    strip.insertBefore(this.createSymbolElement(this.getSafeRandomSymbol(colIdx, 0, [])), strip.firstChild);
-                    if (strip.children.length > 7) strip.removeChild(strip.lastChild);
-                    gameAudio.reelTick();
-                    await new Promise(r => setTimeout(r, this.speedLevel === 3 ? 20 : 35));
-                }
-
+                // مسار طويل من الرموز المتحركة، والنتيجة الحقيقية في آخر 3 خانات.
                 strip.innerHTML = '';
-                this.gridMatrix[colIdx] = targetSymbols;
-                for (let i = 0; i < 3; i++) {
-                    strip.appendChild(this.createSymbolElement(targetSymbols[i]));
+                for (let i = 0; i < randomCount; i++) {
+                    const randomSymbol = this.getSafeRandomSymbol(colIdx, i % 3, []);
+                    strip.appendChild(this.createSymbolElement(randomSymbol));
                 }
+                targetSymbols.forEach(sym => strip.appendChild(this.createSymbolElement(sym)));
+
+                const travel = randomCount * cellHeight;
+                strip.style.transform = 'translate3d(0,0,0)';
+                strip.offsetHeight;
+
+                const animation = strip.animate([
+                    { transform: 'translate3d(0,0,0)' },
+                    { transform: `translate3d(0,-${travel}px,0)` }
+                ], {
+                    duration,
+                    easing: 'cubic-bezier(.08,.82,.16,1)',
+                    fill: 'forwards'
+                });
+
+                const tickTimer = setInterval(() => gameAudio.reelTick(), this.speedLevel === 3 ? 58 : 72);
+                const stopWatcher = setInterval(() => {
+                    if (this.forceStopRequested) {
+                        try { animation.cancel(); } catch (_) {}
+                    }
+                }, 30);
+
+                if (this.forceStopRequested) animation.cancel();
+                await new Promise(resolve => {
+                    let done = false;
+                    const finish = () => {
+                        if (!done) {
+                            done = true;
+                            clearInterval(tickTimer);
+                            clearInterval(stopWatcher);
+                            resolve();
+                        }
+                    };
+                    animation.onfinish = finish;
+                    animation.oncancel = finish;
+                });
+
+                // زر الإيقاف يمكن أن يوقف الكل فوراً مع الحفاظ على النتيجة المحددة.
+                try { animation.cancel(); } catch (_) {}
+                strip.style.transform = 'translate3d(0,0,0)';
+                strip.innerHTML = '';
+                this.gridMatrix[colIdx] = targetSymbols.slice();
+                targetSymbols.forEach(sym => strip.appendChild(this.createSymbolElement(sym)));
                 strip.classList.remove('reel-spinning');
                 strip.classList.add('reel-stop-bounce');
                 setTimeout(() => strip.classList.remove('reel-stop-bounce'), 360);
+                column.classList.remove('reel-active');
                 gameAudio.reelStop();
+            }
+
+            _symbolById(id) {
+                return SYMBOLS.find(s => s.id === id) || null;
+            }
+
+            _makeWinningLine(reels, symbol, matchCount, lineIdx) {
+                const linePattern = PAYLINES[lineIdx];
+                for (let c = 0; c < matchCount; c++) {
+                    reels[c][linePattern[c]] = symbol;
+                }
+            }
+
+            _removeAccidentalFiveSevenJackpots(reels) {
+                for (const linePattern of PAYLINES) {
+                    let allSeven = true;
+                    for (let c = 0; c < 5; c++) {
+                        if (!reels[c][linePattern[c]] || reels[c][linePattern[c]].id !== 'seven') {
+                            allSeven = false;
+                            break;
+                        }
+                    }
+                    if (allSeven) {
+                        const c = 4;
+                        const r = linePattern[c];
+                        reels[c][r] = SYMBOLS[7];
+                    }
+                }
             }
 
             generateControlledResult(backendResult) {
                 const reels = [[], [], [], [], []];
                 let wildCols = [];
 
+                // احتمال ظهور خمسة سبعات كاملين = 0.2% فقط.
+                const forceFiveSevens = Math.random() < 0.002;
+                if (forceFiveSevens) {
+                    for (let c = 0; c < 5; c++) {
+                        for (let r = 0; r < 3; r++) reels[c].push(this.getSafeRandomSymbol(c, r, reels));
+                    }
+                    this._makeWinningLine(reels, SYMBOLS[1], 5, 0);
+                    return {
+                        win: true,
+                        payout: (backendResult && backendResult.payout > 0) ? parseFloat(backendResult.payout) : SYMBOLS[1].pays[5] * (this.currentBet / 3),
+                        reels,
+                        wildCols,
+                        winningLines: [{ lineIdx: 0, matchCount: 5 }]
+                    };
+                }
+
                 for (let c = 0; c < 5; c++) {
                     for (let r = 0; r < 3; r++) {
                         reels[c].push(this.getSafeRandomSymbol(c, r, reels));
                     }
                 }
+                this._removeAccidentalFiveSevenJackpots(reels);
 
-                if (backendResult && backendResult.win && backendResult.payout > 0) {
-                    // توزيع رمز متطابق لتنفيذ فوز حقيقي
-                    const winSym = SYMBOLS[1]; // Seven
-                    const matchLen = Math.min(5, Math.max(3, Math.floor(Math.random() * 3) + 3));
+                // مكافأة الثور: عدد الثيران مضمون عبر 5 لفات، وليس ثوراً في كل لفة.
+                let requestedBonusBull = 0;
+                if (this.bonusWildMode && this.bonusWildsRemaining > 0) {
+                    const spinsLeft = Math.max(1, this.autoSpinsLeft + 1);
+                    requestedBonusBull = this.bonusWildsRemaining >= spinsLeft
+                        ? 1
+                        : (Math.random() < (this.bonusWildsRemaining / spinsLeft) ? 1 : 0);
+                    if (requestedBonusBull) this.bonusWildsRemaining--;
+                }
+
+                const backendWin = !!(backendResult && backendResult.win && parseFloat(backendResult.payout) > 0);
+                if (backendWin || requestedBonusBull) {
                     const lineIdx = Math.floor(Math.random() * PAYLINES.length);
                     const linePattern = PAYLINES[lineIdx];
 
-                    for (let c = 0; c < matchLen; c++) {
-                        reels[c][linePattern[c]] = winSym;
+                    // إن كانت نتيجة الخادم فوزاً، نختار رمزاً من جدول الأرباح بدل إجبار كل فوز على 7.
+                    let winSym = SYMBOLS[[1, 2, 3, 4, 7, 8, 9, 10][Math.floor(Math.random() * 8)]];
+                    if (backendResult && backendResult.win_symbol) {
+                        winSym = this._symbolById(backendResult.win_symbol) || winSym;
                     }
-                }
 
-                for (let c = 0; c < 5; c++) {
-                    if (reels[c].some(s => s.isWild)) {
-                        const mults = [2, 3, 5];
-                        const chosenMult = mults[Math.floor(Math.random() * mults.length)];
-                        wildCols.push({ col: c, mult: chosenMult });
-                        for (let r = 0; r < 3; r++) reels[c][r] = SYMBOLS[0]; 
+                    let matchCount = 3 + Math.floor(Math.random() * 3);
+                    if (backendResult && Number.isFinite(Number(backendResult.match_count))) {
+                        matchCount = Math.min(5, Math.max(3, Number(backendResult.match_count)));
+                    }
+                    if (backendResult && parseFloat(backendResult.payout) >= this.currentBet * 150) {
+                        winSym = SYMBOLS[1];
+                        matchCount = 5;
+                    }
+                    this._makeWinningLine(reels, winSym, matchCount, lineIdx);
+
+                    if (requestedBonusBull) {
+                        // الثور يحتل بكرة واحدة فقط، ثم يتمدد عمودياً عند تحقق الربح.
+                        const available = [0, 1, 2, 3, 4];
+                        const bullCol = available[Math.floor(Math.random() * available.length)];
+                        for (let r = 0; r < 3; r++) reels[bullCol][r] = SYMBOLS[0];
+                        const mult = 5;
+                        wildCols.push({ col: bullCol, mult });
+                    } else if (backendWin && Math.random() < 0.12) {
+                        // الثور العادي نادر جداً، ولا يمكنه اختيار x5.
+                        const bullCol = Math.floor(Math.random() * 5);
+                        for (let r = 0; r < 3; r++) reels[bullCol][r] = SYMBOLS[0];
+                        const mult = Math.random() < 0.55 ? 2 : 3;
+                        wildCols.push({ col: bullCol, mult });
                     }
                 }
 
                 const winData = this.calculateWins(reels, wildCols);
-                return { 
-                    win: winData.totalWin > 0, 
-                    payout: (backendResult && backendResult.payout > 0) ? backendResult.payout : winData.totalWin, 
-                    reels: reels, 
-                    wildCols: wildCols, 
-                    winningLines: winData.winningLines 
+                return {
+                    win: winData.totalWin > 0 || backendWin,
+                    payout: backendWin ? parseFloat(backendResult.payout) : winData.totalWin,
+                    reels,
+                    wildCols,
+                    winningLines: winData.winningLines
                 };
             }
 
@@ -2004,7 +2170,7 @@ html,body{
             }
 
             async processResult(data) {
-                if (data.wildCols && data.wildCols.length > 0) {
+                if (data.win && data.wildCols && data.wildCols.length > 0) {
                     data.wildCols.forEach(w => {
                         this.expandStandingBull(w.col, w.mult);
                         gameAudio.bullDrop();
@@ -2012,27 +2178,36 @@ html,body{
                 }
 
                 if (data.win && data.payout > 0) {
-                    this.highlightWinningSymbols(data.winningLines);
-                    this.drawWinningPaylines(data.winningLines);
-                    
-                    this.showWinBanner(`ربحت ${data.payout.toFixed(2)} NPS`);
+                    this.highlightWinningSymbols(data.winningLines || []);
+                    this.drawWinningPaylines(data.winningLines || []);
+
+                    this.showWinBanner(`+ ${Number(data.payout).toFixed(2)} NPS`);
                     if (data.payout >= this.currentBet * 50) gameAudio.bigWin();
                     else gameAudio.normalWin();
-                    this.balance += data.payout;
+
+                    // الرصيد المحلي يعرض النتيجة فوراً؛ الخادم يبقى المصدر النهائي للرصيد.
+                    this.balance += Number(data.payout);
                     this.updateBalanceUI();
 
-                    // تأكيد إنهاء الجولة وإضافة الربح للباك إند
                     try {
-                        await fetch('/api/game/finish', {
+                        const finishRes = await fetch('/api/game/finish', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ round_id: this.currentRoundId })
                         });
+                        const finishData = await finishRes.json().catch(() => null);
+                        if (finishData && finishData.new_balance !== undefined) {
+                            this.balance = parseFloat(finishData.new_balance);
+                            this.updateBalanceUI();
+                        }
                     } catch(e) {}
                 }
 
                 if (this.autoSpinsLeft > 0) {
-                    setTimeout(() => this.startSpin(), this.speedLevel === 3 ? 200 : 600);
+                    setTimeout(() => this.startSpin(), this.speedLevel === 3 ? 220 : 650);
+                } else if (this.bonusWildMode) {
+                    this.bonusWildMode = false;
+                    this.bonusWildsRemaining = 0;
                 }
             }
 
@@ -2071,6 +2246,7 @@ html,body{
                     }
                     const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
                     polyline.setAttribute('points', points.join(' '));
+                    polyline.setAttribute('class', 'payline');
                     polyline.setAttribute('stroke', '#ffe600');
                     polyline.setAttribute('stroke-width', '4.5');
                     polyline.setAttribute('fill', 'none');
@@ -2096,7 +2272,7 @@ html,body{
             }
 
             updateBalanceUI() {
-                document.getElementById('balanceDisplay').innerText = `Balance ${this.balance.toFixed(1)} NPS`;
+                document.getElementById('balanceDisplay').innerText = `الرصيد: ${this.balance.toFixed(2)} NPS`;
             }
 
             openAutoModal() { document.getElementById('autoModal').style.display = 'flex'; }
@@ -2109,15 +2285,15 @@ html,body{
             openBuyBonusModal() {
                 const grid = document.getElementById('buyBonusOptionsGrid');
                 grid.innerHTML = `
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus(50)"><div class="option-card-title">Single Wild</div><div class="option-card-price">${(this.currentBet * 50)} NPS</div></div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus(100)"><div class="option-card-title">Random Wild</div><div class="option-card-price">${(this.currentBet * 100)} NPS</div></div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus(150)"><div class="option-card-title">Double Wild</div><div class="option-card-price">${(this.currentBet * 150)} NPS</div></div>
-                    <div class="option-card" onclick="slotEngine.executeBuyBonus(350)"><div class="option-card-title">Triple Wild</div><div class="option-card-price">${(this.currentBet * 350)} NPS</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(50,1)"><div class="option-card-title">ثور واحد</div><div class="option-card-price">${(this.currentBet * 50)} NPS</div><div style="font-size:.7rem;color:#aaa">1 ثور خلال 5 لفات</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(100,2)"><div class="option-card-title">ثوران</div><div class="option-card-price">${(this.currentBet * 100)} NPS</div><div style="font-size:.7rem;color:#aaa">2 ثور خلال 5 لفات</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(150,3)"><div class="option-card-title">3 ثيران</div><div class="option-card-price">${(this.currentBet * 150)} NPS</div><div style="font-size:.7rem;color:#aaa">3 ثيران خلال 5 لفات</div></div>
+                    <div class="option-card" onclick="slotEngine.executeBuyBonus(350,1)"><div class="option-card-title">ثور ذهبي 5x</div><div class="option-card-price">${(this.currentBet * 350)} NPS</div><div style="font-size:.7rem;color:#aaa">ثور واحد مضمون + 5x</div></div>
                 `;
                 document.getElementById('buyBonusModal').style.display = 'flex';
             }
 
-            executeBuyBonus(mult) {
+            executeBuyBonus(mult, bullCount = 1) {
                 const cost = this.currentBet * mult;
                 if (this.balance < cost) {
                     alert('الرصيد غير كافٍ لشراء هذه المكافأة!');
@@ -2127,6 +2303,8 @@ html,body{
                 this.updateBalanceUI();
                 this.closeModal('buyBonusModal');
                 this.autoSpinsLeft = 5;
+                this.bonusWildMode = true;
+                this.bonusWildsRemaining = Math.min(3, Math.max(1, bullCount));
                 if (!this.isSpinning) this.startSpin();
             }
 
