@@ -146,7 +146,7 @@ html, body{
     grid-template-columns: repeat(5, 1fr);
     gap: 2px;
     z-index: 10;
-    overflow: hidden;
+    overflow: visible;
     padding: 2px;
     background: rgba(0,0,0,0.5);
     border: 2.5px solid #ffd700;
@@ -159,7 +159,7 @@ html, body{
     position: relative;
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid rgba(255, 204, 0, 0.7);
     border-radius: 4px;
     background: rgba(12, 5, 22, 0.85);
@@ -195,7 +195,7 @@ html, body{
     transition: transform 0.2s, filter 0.2s;
 }
 
-/* حركة الدوران المحدثة والسريعة مثل الفيديو */
+/* حركة الدوران السريعة والمموهة */
 .reel-spinning .symbol-cell img{
     filter: blur(4px) brightness(1.25) drop-shadow(0 0 8px #ffb700);
     transform: scaleY(1.25);
@@ -222,24 +222,38 @@ html, body{
 }
 
 /* =====================================================
-   تأثير الثور الـ 3D المطور الهابط والمضيء طوال الوقت
+   تأثير الثور الـ 3D المطور الذي يغطي البكرة ويتعدى الجوانب
 ===================================================== */
 .standing-wild-overlay{
     position: absolute;
-    inset: 0;
-    z-index: 100;
+    inset: -4% -14%;
+    z-index: 120;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle, rgba(255,215,0,.45) 0%, rgba(0,0,0,.8) 85%),
-                url('https://i.ibb.co/fdbs16Dc/file-0000000055b4820a90f0cf27b1a50784.png') center/contain no-repeat;
-    border-radius: 4px;
-    border: 2px solid #ffd700;
-    box-shadow: inset 0 0 20px #ffd700, 0 0 30px rgba(255,215,0,0.9);
+    background: radial-gradient(circle, rgba(255,215,0,.35) 0%, rgba(0,0,0,.75) 85%);
+    border-radius: 8px;
+    border: 2.5px solid #ffd700;
+    box-shadow: inset 0 0 20px #ffd700, 0 0 35px rgba(255,215,0,0.95);
     animation: bullDrop3D 0.5s cubic-bezier(.17, .89, .32, 1.25) forwards, bullGlowLoop 1.2s infinite alternate ease-in-out;
-    overflow: hidden;
+    overflow: visible;
+    pointer-events: none;
     perspective: 1000px;
+}
+
+.standing-wild-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 0 15px #ffd700) drop-shadow(0 0 25px #ff5500) brightness(1.2);
+    transform: scale(1.12);
+    animation: bullPulse3D 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes bullPulse3D {
+    0% { transform: scale(1.10) rotate(0deg); }
+    100% { transform: scale(1.20) rotate(1deg); }
 }
 
 @keyframes bullDrop3D{
@@ -269,7 +283,7 @@ html, body{
 .wild-multiplier-badge{
     position: absolute;
     bottom: 6px;
-    z-index: 10;
+    z-index: 130;
     min-width: 44px;
     padding: 2px 8px;
     border: 2px solid #ffffff;
@@ -289,7 +303,7 @@ html, body{
 }
 
 /* =====================================================
-   تطوير خطوط الفوز (أسرع وأكثر لمعاناً وشعاعاً)
+   خطوط الفوز Canvas SVG
 ===================================================== */
 #payline-canvas{
     position: absolute;
@@ -679,6 +693,7 @@ html, body{
             <p style="color:#ffd700; font-weight:bold">• الأرباح الموضحة للرهان الأساسي (3 NPS) وتتضاعف طردياً مع زيادة الرهان:</p>
             <br>
             <p>🔥 <b>الرقم 7:</b> 5x=1,500 | 4x=75 | 3x=15 | 2x=3 NPS</p>
+            <p>🍓 <b>التوت:</b> 5x=210 | 4x=36 | 3x=12 NPS</p>
             <p>🍇 <b>العنب:</b> 5x=210 | 4x=36 | 3x=12 NPS</p>
             <p>🍉 <b>البطيخ:</b> 5x=210 | 4x=36 | 3x=12 NPS</p>
             <p>🔔 <b>الجرس:</b> 5x=60 | 4x=12 | 3x=6 NPS</p>
@@ -686,13 +701,13 @@ html, body{
             <br>
             <p>⭐ <b>النجمة (Scatter):</b> 3x=60 NPS (تظهر على البكرات 1، 3، 5)</p>
             <p>💲 <b>الدولار (Scatter):</b> 5x=300 | 4x=60 | 3x=15 NPS (في أي مكان)</p>
-            <p>🐂 <b>الثور الذهبي (Wild 3D):</b> يظهر على البكرات 2 و 3 و 4. يمتد بتأثير 3D هابط ليغطي البكرة كاملة ويمتلك مضاعفات x2، x3، و x5.</p>
+            <p>🐂 <b>الثور الذهبي (Wild 3D):</b> يظهر على البكرات 2 و 3 و 4. يمتد بتأثير 3D هابط ليغطي البكرة كاملة ويتجاوز الحواف ويمتلك مضاعفات x2، x3، و x5.</p>
         </div>
         <button class="btn-modal-close" onclick="slotEngine.closeModal('rulesModal')">إغلاق</button>
     </div>
 </div>
 
-<!-- نافذة التلقائي -->
+<!-- نافذة الدوران التلقائي -->
 <div class="modal-bg" id="autoModal">
     <div class="modal-card">
         <h3>🔄 الدوران التلقائي</h3>
@@ -760,11 +775,12 @@ const gameAudio = new GameAudio();
 document.addEventListener('pointerdown', () => gameAudio.unlock(), { once: true });
 
 /* =========================================================
-   قائمة الرموز المخزنة مع جدول أسعار 3 NPS المظبوطة
+   قائمة الرموز المخزنة مع إضافة رمز التوت وجدول الأسعار
 ========================================================= */
 const SYMBOLS = [
     { id: 'bull', img: 'https://i.ibb.co/B2QrPhfT/file-0000000097ec81f487e5bbb264d00b22.png', isWild: true },
     { id: 'seven', img: 'https://i.ibb.co/qVtB0SM/file-000000008f308246859e7eda928abca0.png', pays: { 2: 3, 3: 15, 4: 75, 5: 1500 } },
+    { id: 'berry', img: 'https://i.ibb.co/MyBMT7kX/file-000000002294820a897ca6772c20b945.png', pays: { 3: 12, 4: 36, 5: 210 } },
     { id: 'grape', img: 'https://i.ibb.co/7J6Z0ZQJ/file-000000000f2482469f6399a44095418a.png', pays: { 3: 12, 4: 36, 5: 210 } },
     { id: 'melon', img: 'https://i.ibb.co/C5wWL35p/file-000000002e548246a7a48188db0cecbc.png', pays: { 3: 12, 4: 36, 5: 210 } },
     { id: 'bell', img: 'https://i.ibb.co/1CWmDhY/file-00000000dd5c81f4bdb184dc34389cd8.png', pays: { 3: 6, 4: 12, 5: 60 } },
@@ -778,6 +794,9 @@ const SYMBOLS = [
 
 // التحميل المسبق للرموز
 SYMBOLS.forEach(s => { const img = new Image(); img.src = s.img; });
+
+/* صورة الثور الرابح الـ 3D الممتد المحدثة */
+const WINNING_BULL_3D_IMG = 'https://i.ibb.co/cSJh1Q8Y/file-0000000072ac820a9fdd5ee1e0ec2e6d.png';
 
 /* خطوط الربح الـ 10 المعتمدة */
 const PAYLINES = [
@@ -802,7 +821,7 @@ const BET_PAGES = [
 ];
 
 /* =========================================================
-   محرك اللعبة المطور
+   محرك اللعبة المطور مع ربط قاعدة البيانات والسيرفر
 ========================================================= */
 class SlotEngine {
     constructor() {
@@ -830,18 +849,38 @@ class SlotEngine {
         await this.syncUserBalance();
     }
 
+    /* مزامنة الرصيد من قاعدة البيانات */
     async syncUserBalance() {
         try {
             const res = await fetch('/api/user/account');
             const data = await res.json();
-            if (data && data.balance !== undefined) {
-                this.balance = parseFloat(data.balance);
+            if (data && (data.balance !== undefined || data.bot_balance !== undefined || data.site_balance !== undefined)) {
+                let serverBal = data.balance !== undefined ? data.balance : (data.bot_balance || data.site_balance || 0);
+                this.balance = parseFloat(serverBal);
                 this.updateBalanceUI();
             }
-        } catch(e) {}
+        } catch(e) {
+            console.log('ملاحظة الاتصال بملف قاعدة البيانات:', e);
+        }
     }
 
-    /* ملء البكرات فورياً وبتناسق عند الدخول */
+    /* تحديث الخصم والإضافة في قاعدة البيانات للسيرفر */
+    async updateServerBalance(amountChange, actionType = 'spin') {
+        try {
+            await fetch('/api/game/balance/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount: amountChange,
+                    action: actionType,
+                    bet: this.currentBet
+                })
+            });
+        } catch(e) {
+            console.log('ملاحظة تحديث الرصيد بالسيرفر:', e);
+        }
+    }
+
     initStrips() {
         for (let r = 0; r < 5; r++) {
             const strip = document.getElementById(`strip${r}`);
@@ -876,11 +915,11 @@ class SlotEngine {
     }
 
     getSafeRandomSymbol() {
-        if (Math.random() < 0.03) return SYMBOLS[0];
-        if (Math.random() < 0.02) return SYMBOLS[5];
-        if (Math.random() < 0.03) return SYMBOLS[6];
+        if (Math.random() < 0.03) return SYMBOLS[0]; // bull
+        if (Math.random() < 0.02) return SYMBOLS[6]; // star
+        if (Math.random() < 0.03) return SYMBOLS[7]; // dollar
 
-        const normalSymbols = [1, 2, 3, 4, 7, 8, 9, 10];
+        const normalSymbols = [1, 2, 3, 4, 5, 8, 9, 10, 11];
         const randIdx = normalSymbols[Math.floor(Math.random() * normalSymbols.length)];
         return SYMBOLS[randIdx];
     }
@@ -952,12 +991,14 @@ class SlotEngine {
 
         if (this.autoSpinsLeft > 0) this.autoSpinsLeft--;
 
+        // خصم الرهان محلياً وفي قاعدة البيانات
         this.balance -= this.currentBet;
         this.updateBalanceUI();
+        this.updateServerBalance(-this.currentBet, 'deduct');
 
         const finalResult = this.generateControlledResult();
 
-        // حركة الدوران الانسيابية للبكرات كالفيديو
+        // حركة الدوران الانسيابية السريعة كالفيديو
         const spinPromises = [];
         for (let col = 0; col < 5; col++) {
             spinPromises.push(this.spinColumnDownward(col, finalResult.reels[col]));
@@ -1070,11 +1111,10 @@ class SlotEngine {
         };
     }
 
-    /* حساب الأرباح طردياً مع قيمة الرهان */
     calculateWins(reels, wildCols) {
         let totalWin = 0;
         let winningLinesData = [];
-        const scale = this.currentBet / 3; // مضاعف النسبة طردياً لرهان 3 NPS
+        const scale = this.currentBet / 3;
 
         let wildMultiplier = 1;
         if (wildCols && wildCols.length > 0) {
@@ -1104,7 +1144,7 @@ class SlotEngine {
             }
         });
 
-        // Scatter calculations
+        // Scatters
         let starCount = 0, dollarCount = 0;
         for (let c = 0; c < 5; c++) {
             for (let r = 0; r < 3; r++) {
@@ -1140,8 +1180,10 @@ class SlotEngine {
                 gameAudio.normalWin();
             }
 
+            // إضـافة الرصيد محلياً وفي قاعدة البيانات بالسيرفر
             this.balance += Number(data.payout);
             this.updateBalanceUI();
+            this.updateServerBalance(Number(data.payout), 'add');
         }
 
         if (this.autoSpinsLeft > 0) {
@@ -1151,14 +1193,17 @@ class SlotEngine {
         }
     }
 
-    /* تأثير الثور الـ 3D مع هبوط لمعان دائم واستمرار التوهج حتى الدوران التالي */
+    /* تأثير الثور الـ 3D المحدث بالصورة الجديدة الممتدة بدون تشويه لتعبئة البكرة ومجاورة الجوانب */
     expandStandingBull3D(colIdx, mult) {
         const col = document.querySelectorAll('.reel-column')[colIdx];
         if (!col) return;
         
         const bullOverlay = document.createElement('div');
         bullOverlay.className = 'standing-wild-overlay';
-        bullOverlay.innerHTML = `<div class="bull-shimmer-effect"></div>`;
+        bullOverlay.innerHTML = `
+            <img class="standing-wild-img" src="${WINNING_BULL_3D_IMG}" alt="Golden Bull Wild 3D">
+            <div class="bull-shimmer-effect"></div>
+        `;
         
         if (mult > 1) {
             bullOverlay.innerHTML += `<div class="wild-multiplier-badge">x${mult}</div>`;
@@ -1166,7 +1211,6 @@ class SlotEngine {
         col.appendChild(bullOverlay);
     }
 
-    /* التناوب التلقائي لخطوط الربح وشعاع أسرع وأكثر لمعاناً */
     startWinningLinesCycle(winningLines) {
         this.clearWinningEffects();
         if (!winningLines || winningLines.length === 0) return;
@@ -1217,7 +1261,6 @@ class SlotEngine {
         document.getElementById('payline-canvas').innerHTML = '';
     }
 
-    /* تنظيف المؤثرات السابقة فقط عند بدايه دوران جديد */
     clearWinningEffects() {
         if (this.linesCycleInterval) clearInterval(this.linesCycleInterval);
         this.clearPaylineCanvas();
@@ -1300,6 +1343,7 @@ class SlotEngine {
         if (this.balance < cost) { alert('الرصيد غير كافٍ لشراء المكافأة!'); return; }
         this.balance -= cost;
         this.updateBalanceUI();
+        this.updateServerBalance(-cost, 'buy_bonus');
         this.closeModal('buyBonusModal');
         this.autoSpinsLeft = 5;
         this.bonusWildMode = true;
