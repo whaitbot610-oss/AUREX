@@ -310,6 +310,7 @@ def set_setting(cursor, key, value):
 def get_all_games_info(cursor):
     """
     اكتشاف جميع الألعاب المضافة في المجلدات تلقائياً
+    وقراءة بيانات info.json أو config.json
     وجلب نسبة الربح (RTP) المخصصة لكل لعبة من الإعدادات
     """
     base_dirs = [
@@ -336,16 +337,21 @@ def get_all_games_info(cursor):
                 if os.path.isdir(item_path) and item not in seen:
                     seen.add(item)
                     game_title = item
+                    game_image = ""
+                    game_description = ""
                     
-                    # قراءة اسم اللعبة من config.json إن وجد
-                    config_file = os.path.join(item_path, 'config.json')
-                    if os.path.exists(config_file):
-                        try:
-                            with open(config_file, 'r', encoding='utf-8') as f:
-                                cfg = json.load(f)
-                                game_title = cfg.get('title', cfg.get('name', item))
-                        except Exception:
-                            pass
+                    # قراءة بيانات اللعبة من info.json أو config.json إن وجد
+                    for meta_file_name in ['info.json', 'config.json']:
+                        meta_file = os.path.join(item_path, meta_file_name)
+                        if os.path.exists(meta_file):
+                            try:
+                                with open(meta_file, 'r', encoding='utf-8') as f:
+                                    cfg = json.load(f)
+                                    game_title = cfg.get('title', cfg.get('name', game_title))
+                                    game_image = cfg.get('image', game_image)
+                                    game_description = cfg.get('description', game_description)
+                            except Exception:
+                                pass
                     
                     # نسبة الربح المخصصة أو العامة
                     rtp_val = float(game_rtps.get(item, game_rtps.get(game_title, global_rtp)))
@@ -354,13 +360,15 @@ def get_all_games_info(cursor):
                         'name': game_title,
                         'folder': item,
                         'url': f'/games/{item}/index.html',
+                        'image': game_image,
+                        'description': game_description,
                         'rtp_rate': rtp_val
                     })
 
     if not games:
         games = [
-            {'name': 'فواكة بالكيلو', 'folder': 'fruits', 'url': '/wheel', 'rtp_rate': float(game_rtps.get('fruits', global_rtp))},
-            {'name': 'AUREX Slots', 'folder': 'slots', 'url': '/', 'rtp_rate': float(game_rtps.get('slots', global_rtp))}
+            {'name': 'فواكة بالكيلو', 'folder': 'fruits', 'url': '/wheel', 'image': '', 'description': '', 'rtp_rate': float(game_rtps.get('fruits', global_rtp))},
+            {'name': 'AUREX Slots', 'folder': 'slots', 'url': '/', 'image': '', 'description': '', 'rtp_rate': float(game_rtps.get('slots', global_rtp))}
         ]
 
     return games
